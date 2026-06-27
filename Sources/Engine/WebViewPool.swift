@@ -77,7 +77,11 @@ public final class PooledWebView: NSObject, WKNavigationDelegate {
     /// Chuẩn bị tái sử dụng: Reset trạng thái và tải trang trống an toàn
     public func prepareForReuse() {
         cancelTimeoutTask()
-        self.completion = nil
+        if let comp = self.completion {
+            self.completion = nil
+            let err = NSError(domain: "PooledWebView", code: -998, userInfo: [NSLocalizedDescriptionKey: "WebView bị tái sử dụng khi tác vụ đang chạy"])
+            comp(.failure(err))
+        }
         self.jsToEvaluate = nil
         self.isPageLoaded = false
         
@@ -91,7 +95,11 @@ public final class PooledWebView: NSObject, WKNavigationDelegate {
     /// Hủy hoàn toàn các kết nối và dừng tải
     public func destroy() {
         cancelTimeoutTask()
-        self.completion = nil
+        if let comp = self.completion {
+            self.completion = nil
+            let err = NSError(domain: "PooledWebView", code: -999, userInfo: [NSLocalizedDescriptionKey: "WebView bị hủy bỏ"])
+            comp(.failure(err))
+        }
         self.jsToEvaluate = nil
         self.webView.navigationDelegate = nil
         self.webView.stopLoading()

@@ -8,6 +8,7 @@ public final class AnalyzeUrl {
     private let source: BookSource?
     private var ruleData: [String: Any]
     private var sharedJSContext: JSContext?
+    private let lock = NSRecursiveLock()
     
     public init(urlStr: String, source: BookSource?, ruleData: [String: Any] = [:]) {
         self.urlStr = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -105,6 +106,9 @@ public final class AnalyzeUrl {
         let matches = regex.matches(in: text, options: [], range: nsRange)
         
         if matches.isEmpty { return text }
+        
+        lock.lock()
+        defer { lock.unlock() }
         
         // Tái sử dụng JSContext trong cùng một request của URL để tránh overhead
         if sharedJSContext == nil {

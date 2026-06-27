@@ -230,18 +230,20 @@ public actor TranslationLoader {
         var entries: [(String, String)] = []
         
         contentStr.enumerateLines { line, _ in
-            let trimmed = line.replacingOccurrences(of: "\u{0000}", with: "")
-                              .replacingOccurrences(of: "\u{0001}", with: "")
-                              .replacingOccurrences(of: "\u{0004}", with: "")
-                              .trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            guard !trimmed.isEmpty else { return }
-            
-            if let eqIndex = trimmed.firstIndex(of: "=") {
-                let key = String(trimmed[..<eqIndex]).trimmingCharacters(in: .whitespaces)
-                let val = String(trimmed[trimmed.index(after: eqIndex)...]).trimmingCharacters(in: .whitespaces)
-                if !key.isEmpty && !val.isEmpty {
-                    entries.append((key, val))
+            autoreleasepool {
+                let trimmed = line.replacingOccurrences(of: "\u{0000}", with: "")
+                                  .replacingOccurrences(of: "\u{0001}", with: "")
+                                  .replacingOccurrences(of: "\u{0004}", with: "")
+                                  .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                guard !trimmed.isEmpty else { return }
+                
+                if let eqIndex = trimmed.firstIndex(of: "=") {
+                    let key = String(trimmed[..<eqIndex]).trimmingCharacters(in: .whitespaces)
+                    let val = String(trimmed[trimmed.index(after: eqIndex)...]).trimmingCharacters(in: .whitespaces)
+                    if !key.isEmpty && !val.isEmpty {
+                        entries.append((key, val))
+                    }
                 }
             }
         }
@@ -255,16 +257,18 @@ public actor TranslationLoader {
         var map: [String: String] = [:]
         
         contentStr.enumerateLines { line, _ in
-            let trimmed = line.replacingOccurrences(of: "\u{0000}", with: "")
-                              .trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            guard !trimmed.isEmpty else { return }
-            
-            if let eqIndex = trimmed.firstIndex(of: "=") {
-                let key = String(trimmed[..<eqIndex]).trimmingCharacters(in: .whitespaces)
-                let val = String(trimmed[trimmed.index(after: eqIndex)...]).trimmingCharacters(in: .whitespaces)
-                if !key.isEmpty && !val.isEmpty {
-                    map[key] = val
+            autoreleasepool {
+                let trimmed = line.replacingOccurrences(of: "\u{0000}", with: "")
+                                  .trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                guard !trimmed.isEmpty else { return }
+                
+                if let eqIndex = trimmed.firstIndex(of: "=") {
+                    let key = String(trimmed[..<eqIndex]).trimmingCharacters(in: .whitespaces)
+                    let val = String(trimmed[trimmed.index(after: eqIndex)...]).trimmingCharacters(in: .whitespaces)
+                    if !key.isEmpty && !val.isEmpty {
+                        map[key] = val
+                    }
                 }
             }
         }

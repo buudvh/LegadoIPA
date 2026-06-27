@@ -201,7 +201,8 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
             throw NSError(domain: "DoubleArrayTrie", code: 105, userInfo: [NSLocalizedDescriptionKey: "Kích thước string pool không hợp lệ"])
         }
         
-        self.stringPool = data.subdata(in: poolBytesOffset..<(poolBytesOffset + poolSize))
+        // Ngắt kết nối Memory Mapping bằng cách sao chép dữ liệu sang một vùng RAM độc lập để tránh lỗi SIGBUS
+        self.stringPool = Data(data[poolBytesOffset..<(poolBytesOffset + poolSize)])
         self.isMapped = true
     }
     

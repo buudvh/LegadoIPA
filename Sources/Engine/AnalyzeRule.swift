@@ -196,11 +196,10 @@ public final class AnalyzeRule {
         })()
         """
         
-        let jsVal: JSValue?
         lock.lock()
-        jsVal = jsContext.evaluateScript(jsExpression)
-        lock.unlock()
+        defer { lock.unlock() }
         
+        let jsVal = jsContext.evaluateScript(jsExpression)
         guard let val = jsVal else { return [] }
         
         if val.isArray {
@@ -216,12 +215,12 @@ public final class AnalyzeRule {
     // MARK: - JS EXECUTION
     
     private func executeJS(_ jsCode: String, withResult result: Any) -> [String] {
-        let jsVal: JSValue?
         lock.lock()
+        defer { lock.unlock() }
+        
         jsContext.setObject(result, forKeyedSubscript: "result" as NSString)
-        jsVal = jsContext.evaluateScript(jsCode)
+        let jsVal = jsContext.evaluateScript(jsCode)
         jsContext.setObject(nil, forKeyedSubscript: "result" as NSString) // Giải phóng tham chiếu
-        lock.unlock()
         
         guard let val = jsVal else { return [] }
         

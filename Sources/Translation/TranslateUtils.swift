@@ -198,7 +198,7 @@ public final class TranslateUtils {
         let convertedText = convertPunctuation(text)
         
         // Bước 2: Tách từ & Tra cứu Trie đồng thời
-        let tokens = tokenize(convertedText, data: data)
+        let tokens = await tokenize(convertedText, data: data)
         
         // Bước 3: Dịch nghĩa & Phiên âm
         var translatedWords: [String] = []
@@ -275,13 +275,19 @@ public final class TranslateUtils {
         return result
     }
     
-    private static func tokenize(_ text: String, data: TranslationData) -> [TranslatedToken] {
+    private static func tokenize(_ text: String, data: TranslationData) async -> [TranslatedToken] {
         var output: [TranslatedToken] = []
         let scalars = Array(text.unicodeScalars)
         let length = scalars.count
         var currentIndex = 0
+        var yieldCounter = 0
         
         while currentIndex < length {
+            yieldCounter += 1
+            if yieldCounter >= 300 {
+                yieldCounter = 0
+                await Task.yield()
+            }
             var longestMatchLen = 0
             var foundTranslation: String? = nil
             
@@ -332,7 +338,11 @@ public final class TranslateUtils {
     }
     
     private static func isChineseCharacter(_ scalar: Unicode.Scalar) -> Bool {
-        return scalar.value >= 0x4E00 && scalar.value <= 0x9FFF
+        let val = scalar.value
+        return (val >= 0x4E00 && val <= 0x9FFF) ||   // CJK Unified Ideographs
+               (val >= 0x3400 && val <= 0x4DBF) ||   // Extension A
+               (val >= 0x20000 && val <= 0x2A6DF) || // Extension B
+               (val >= 0xF900 && val <= 0xFAFF)      // CJK Compatibility
     }
     
     private static func convertPunctuation(_ text: String) -> String {
@@ -416,7 +426,7 @@ public final class TranslateUtils {
             "五": 5, "六": 6, "七": 7, "八": 8, "九": 9
         ]
         
-        let multipliers: Set<Character> = ["十", "百", "千", "万"]
+        let multipliers: Set<Character> = ["十", "百", "千", "万", "亿"]
         let hasMultiplier = chineseNumber.contains(where: { multipliers.contains($0) })
         
         if !hasMultiplier {
@@ -451,6 +461,10 @@ public final class TranslateUtils {
             } else if char == "万" {
                 result += temp
                 result *= 10000
+                temp = 0
+            } else if char == "亿" {
+                result += temp
+                result *= 100000000
                 temp = 0
             } else if char.isNumber {
                 temp = Int(String(char)) ?? 0
