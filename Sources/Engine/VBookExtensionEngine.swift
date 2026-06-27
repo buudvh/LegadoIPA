@@ -74,7 +74,11 @@ public final class VBookExtensionEngine {
         
         // 4. Hàm fetch(url, options) đồng bộ toàn cục
         let fetchBlock: @convention(block) (String, JSValue?) -> JSValue = { urlStr, options in
-            guard let url = URL(string: urlStr.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            let trimmed = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
+            let encodedStr = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
+            let finalUrl = URL(string: trimmed) ?? URL(string: encodedStr)
+            
+            guard let url = finalUrl else {
                 return JSValue(nullIn: context)
             }
             
@@ -87,9 +91,11 @@ public final class VBookExtensionEngine {
                 }
                 
                 if let headersVal = options.objectForKeyedSubscript("headers"), !headersVal.isUndefined, !headersVal.isNull {
-                    if let headersDict = headersVal.toDictionary() as? [String: String] {
+                    if let headersDict = headersVal.toDictionary() {
                         for (key, val) in headersDict {
-                            request.setValue(val, forHTTPHeaderField: key)
+                            let keyStr = (key as? String) ?? "\(key)"
+                            let valStr = (val as? String) ?? "\(val)"
+                            request.setValue(valStr, forHTTPHeaderField: keyStr)
                         }
                     }
                 }
