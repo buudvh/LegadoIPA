@@ -180,14 +180,14 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
         // Tối ưu hóa bộ nhớ: copyBytes trực tiếp vào mảng base/check để tránh tạo mảng temp trung gian khổng lồ
         let baseByteCount = baseLen * 4
         base.withUnsafeMutableBufferPointer { buffer in
-            _ = data.copyBytes(to: buffer, from: baseByteOffset..<(baseByteOffset + baseByteCount))
+            data.copyBytes(to: buffer, from: baseByteOffset..<(baseByteOffset + baseByteCount))
         }
         for i in 0..<baseLen {
             base[i] = Int32(bigEndian: base[i])
         }
         
         check.withUnsafeMutableBufferPointer { buffer in
-            _ = data.copyBytes(to: buffer, from: checkByteOffset..<(checkByteOffset + baseByteCount))
+            data.copyBytes(to: buffer, from: checkByteOffset..<(checkByteOffset + baseByteCount))
         }
         for i in 0..<baseLen {
             check[i] = Int32(bigEndian: check[i])

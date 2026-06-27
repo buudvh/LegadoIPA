@@ -174,7 +174,7 @@ public final class WebViewPool {
             
             // Dọn dẹp cache WebKit trên disk và memory để giải phóng RAM tối đa
             WKWebsiteDataStore.default().removeData(
-                ofTypes: [WKWebsiteDataStoreRecordTypeDiskCache, WKWebsiteDataStoreRecordTypeMemoryCache],
+                ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
                 modifiedSince: Date.distantPast
             ) {}
         }
