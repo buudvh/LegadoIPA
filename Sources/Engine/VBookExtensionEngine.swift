@@ -239,6 +239,51 @@ public final class VBookExtensionEngine {
         }
     }
     
+    
+    /// Đọc nội dung tệp script nghiệp vụ và gộp đệ quy toàn bộ các file được chỉ định qua load('...')
+    private func getFullScriptContent(scriptName: String) -> String? {
+        let extensionsDir = VBookExtensionManager.shared.extensionsDirectoryURL
+        let fileURL = extensionsDir.appendingPathComponent(self.extensionId).appendingPathComponent("src").appendingPathComponent(scriptName)
+        
+        var content = ""
+        if let fileContent = try? String(contentsOf: fileURL, encoding: .utf8) {
+            content = fileContent
+        } else {
+            let outerFileURL = extensionsDir.appendingPathComponent(self.extensionId).appendingPathComponent(scriptName)
+            if let fileContent = try? String(contentsOf: outerFileURL, encoding: .utf8) {
+                content = fileContent
+            } else {
+                return nil
+            }
+        }
+        
+        // Regex tìm lệnh load('filename') hoặc load("filename") có hỗ trợ khoảng trắng tùy ý
+        let pattern = #"load\(\s*['"](.+?)['"]\s*\);?"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return content
+        }
+        
+        var resolvedContent = content
+        let nsString = content as NSString
+        let matches = regex.matches(in: content, options: [], range: NSRange(location: 0, length: nsString.length))
+        
+        // Duyệt ngược để không làm lệch index range khi thay thế chuỗi
+        for match in matches.reversed() {
+            let loadRange = match.range(at: 0)
+            let fileRange = match.range(at: 1)
+            let filename = nsString.substring(with: fileRange)
+            
+            if let loadedContent = getFullScriptContent(scriptName: filename) {
+                resolvedContent = (resolvedContent as NSString).replacingCharacters(in: loadRange, with: loadedContent)
+            } else {
+                // Xóa lệnh load lỗi để tránh crash JS
+                resolvedContent = (resolvedContent as NSString).replacingCharacters(in: loadRange, with: "")
+            }
+        }
+        
+        return resolvedContent
+    }
+    
     /// Thực thi một tệp script nghiệp vụ và gọi hàm entrypoint execute(...)
     public func executeScript(
         scriptName: String,
@@ -256,11 +301,8 @@ public final class VBookExtensionEngine {
         // 3. Chạy config.js để khởi tạo BASE_URL đúng cách
         loadConfigFile(context: context)
         
-        // 4. Đọc và thực thi file script nghiệp vụ
-        let extensionsDir = VBookExtensionManager.shared.extensionsDirectoryURL
-        let scriptURL = extensionsDir.appendingPathComponent(extensionId).appendingPathComponent("src").appendingPathComponent(scriptName)
-        
-        guard let scriptContent = try? String(contentsOf: scriptURL, encoding: .utf8) else {
+        // 4. Phân tích resolve và thực thi file script nghiệp vụ (gộp các file load để tránh lỗi scope let/const ES6)
+        guard let scriptContent = getFullScriptContent(scriptName: scriptName) else {
             throw NSError(domain: "VBookExtensionEngine", code: 501, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file script \(scriptName)"])
         }
         
