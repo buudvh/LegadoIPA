@@ -376,19 +376,31 @@ public struct ExploreView: View {
             let analyzer = AnalyzeRule(content: html, baseUrl: absoluteUrlStr, source: source)
             
             // Lấy quy tắc Explore (hoặc fallback Search)
-            let ruleExplore = source.ruleExplore ?? source.ruleSearch
+            var listRule = ""
+            var nameRule = ""
+            var authorRule = ""
+            var coverRule = ""
+            var introRule = ""
+            var urlRule = ""
             
-            guard let rule = ruleExplore else {
+            if let ruleExplore = source.ruleExplore {
+                listRule = ruleExplore.bookList ?? ""
+                nameRule = ruleExplore.name ?? ""
+                authorRule = ruleExplore.author ?? ""
+                coverRule = ruleExplore.coverUrl ?? ""
+                introRule = ruleExplore.intro ?? ""
+                urlRule = ruleExplore.bookUrl ?? ""
+            } else if let ruleSearch = source.ruleSearch {
+                listRule = ruleSearch.bookList ?? ""
+                nameRule = ruleSearch.name ?? ""
+                authorRule = ruleSearch.author ?? ""
+                coverRule = ruleSearch.coverUrl ?? ""
+                introRule = ruleSearch.intro ?? ""
+                urlRule = ruleSearch.bookUrl ?? ""
+            } else {
                 isSearching = false
                 return
             }
-            
-            let listRule = rule.bookList ?? ""
-            let nameRule = rule.name ?? ""
-            let authorRule = rule.author ?? ""
-            let coverRule = rule.coverUrl ?? ""
-            let introRule = rule.intro ?? ""
-            let urlRule = rule.bookUrl ?? ""
             
             let bookNodes = analyzer.getStringList(listRule)
             var parsedBooks: [Book] = []
