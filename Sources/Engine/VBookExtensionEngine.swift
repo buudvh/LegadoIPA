@@ -85,6 +85,14 @@ public final class VBookExtensionEngine {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             
+            // 1. Đồng bộ cookie từ Webview sang Storage trước khi gửi
+            let semaphoreCookie = DispatchSemaphore(value: 0)
+            Task { @MainActor in
+                await NetworkManager.shared.syncCookiesFromWebViewToStorage()
+                semaphoreCookie.signal()
+            }
+            _ = semaphoreCookie.wait(timeout: .now() + 2.0) // Timeout chờ đồng bộ cookie
+            
             if let options = options, !options.isUndefined, !options.isNull {
                 if let method = options.objectForKeyedSubscript("method")?.toString() {
                     request.httpMethod = method.uppercased()
@@ -119,16 +127,28 @@ public final class VBookExtensionEngine {
             let semaphore = DispatchSemaphore(value: 0)
             var responseData: Data?
             var responseStatus = 500
+            var finalResponseURL: URL?
             
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 if let httpResponse = response as? HTTPURLResponse {
                     responseStatus = httpResponse.statusCode
+                    finalResponseURL = httpResponse.url
                 }
                 responseData = data
                 semaphore.signal()
             }
             task.resume()
             _ = semaphore.wait(timeout: .now() + 30.0) // Chờ tối đa 30s
+            
+            // 2. Đồng bộ ngược cookie nhận được vào Webview để dùng cho các phiên sau
+            if let respURL = finalResponseURL ?? url {
+                let semaphoreSyncBack = DispatchSemaphore(value: 0)
+                Task { @MainActor in
+                    await NetworkManager.shared.syncCookiesToWebView(for: respURL)
+                    semaphoreSyncBack.signal()
+                }
+                _ = semaphoreSyncBack.wait(timeout: .now() + 2.0)
+            }
             
             let data = responseData ?? Data()
             let jsResponse = JS_Response(status: responseStatus, data: data, context: context)
