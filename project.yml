@@ -1,0 +1,26 @@
+name: LegadoIPA
+options:
+  bundleIdPrefix: com.hoang
+targets:
+  LegadoIPA:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - Sources
+    dependencies:
+      - package: SwiftSoup
+        product: SwiftSoup
+    settings:
+      base:
+        CODE_SIGNING_ALLOWED: false
+        CODE_SIGNING_REQUIRED: false
+        CODE_SIGN_IDENTITY: ""
+        DEVELOPMENT_TEAM: ""
+        INFOPLIST_FILE: Sources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.hoang.LegadoIPA
+
+packages:
+  SwiftSoup:
+    url: https://github.com/scinfu/SwiftSoup.git
+    from: 2.6.1
