@@ -154,6 +154,36 @@ public final class MarkdownExporter {
     
     /// Cào danh sách chương truyện
     private func fetchChapterList(book: Book, source: BookSource) async throws -> [BookChapter] {
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let requestUrlStr = book.tocUrl.isEmpty ? book.bookUrl : book.tocUrl
+            let engine = VBookExtensionEngine(extensionId: extId)
+            let jsResult = try await engine.executeScript(scriptName: "toc.js", source: source, arguments: [requestUrlStr])
+            
+            if let dataVal = jsResult.objectForKeyedSubscript("data"), dataVal.isArray {
+                var parsedChapters: [BookChapter] = []
+                let array = dataVal.toArray() ?? []
+                
+                for (i, item) in array.enumerated() {
+                    guard let dict = item as? [String: Any],
+                          let name = dict["name"] as? String,
+                          let chapUrl = dict["url"] as? String else {
+                        continue
+                    }
+                    
+                    let chapter = BookChapter(
+                        bookUrl: book.bookUrl,
+                        index: i,
+                        title: name,
+                        url: chapUrl
+                    )
+                    parsedChapters.append(chapter)
+                }
+                return parsedChapters
+            }
+            throw NSError(domain: "MarkdownExporter", code: 611, userInfo: [NSLocalizedDescriptionKey: "Extension không trả về danh sách chương hợp lệ"])
+        }
+        
         guard let tocRule = source.ruleToc else {
             throw NSError(domain: "MarkdownExporter", code: 602, userInfo: [NSLocalizedDescriptionKey: "Quy tắc danh sách chương (ruleToc) trống"])
         }
@@ -219,6 +249,21 @@ public final class MarkdownExporter {
     
     /// Tải nội dung một chương cụ thể
     private func fetchChapterContent(chapter: BookChapter, source: BookSource, useTranslation: Bool) async throws -> String {
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let engine = VBookExtensionEngine(extensionId: extId)
+            let jsResult = try await engine.executeScript(scriptName: "chap.js", source: source, arguments: [chapter.url])
+            guard let dataVal = jsResult.objectForKeyedSubscript("data"), dataVal.isString else {
+                throw NSError(domain: "MarkdownExporter", code: 612, userInfo: [NSLocalizedDescriptionKey: "Extension không trả về nội dung chương dạng String"])
+            }
+            
+            var processedText = dataVal.toString() ?? ""
+            if useTranslation {
+                processedText = await TranslateUtils.translateContent(processedText)
+            }
+            return processedText
+        }
+        
         guard let contentRule = source.ruleContent else {
             throw NSError(domain: "MarkdownExporter", code: 604, userInfo: [NSLocalizedDescriptionKey: "Quy tắc nội dung chương (ruleContent) trống"])
         }

@@ -26,7 +26,7 @@
     },
     "ruleExplore": {
       "bookList": ".item",
-      "name": "h1 a@text",
+      "name": "h3@text",
       "author": "a.2@text",
       "bookUrl": "a.1@href",
       "coverUrl": "img@src",
@@ -43,7 +43,7 @@
       "updateTime": "[property=\"og:novel:update_time\"]@content"
     },
     "ruleToc": {
-      "chapterList": "#list li a",
+      "chapterList": "#dir a",
       "chapterName": "text",
       "chapterUrl": "href"
     },

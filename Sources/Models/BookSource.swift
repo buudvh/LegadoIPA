@@ -309,6 +309,13 @@ public struct BookSource: Codable, Identifiable, Equatable {
     
     // Cấu hình xuất Markdown đi kèm nguồn sách
     public var markdownExportRule: MarkdownExportRule?
+    
+    // Các thuộc tính hỗ trợ extension VBook JS
+    public var isExtension: Bool?
+    public var extensionId: String?
+    public var extensionConfig: String?
+    public var extensionConfigDefinition: String?
+
 
     public init(
         bookSourceUrl: String = "",
@@ -343,7 +350,11 @@ public struct BookSource: Codable, Identifiable, Equatable {
         ruleReview: ReviewRule? = nil,
         eventListener: Bool = false,
         customButton: Bool = false,
-        markdownExportRule: MarkdownExportRule? = nil
+        markdownExportRule: MarkdownExportRule? = nil,
+        isExtension: Bool? = false,
+        extensionId: String? = nil,
+        extensionConfig: String? = nil,
+        extensionConfigDefinition: String? = nil
     ) {
         self.bookSourceUrl = bookSourceUrl
         self.bookSourceName = bookSourceName
@@ -378,6 +389,10 @@ public struct BookSource: Codable, Identifiable, Equatable {
         self.eventListener = eventListener
         self.customButton = customButton
         self.markdownExportRule = markdownExportRule
+        self.isExtension = isExtension ?? false
+        self.extensionId = extensionId
+        self.extensionConfig = extensionConfig
+        self.extensionConfigDefinition = extensionConfigDefinition
     }
     
     enum CodingKeys: String, CodingKey {
@@ -414,6 +429,10 @@ public struct BookSource: Codable, Identifiable, Equatable {
         case eventListener
         case customButton
         case markdownExportRule
+        case isExtension
+        case extensionId
+        case extensionConfig
+        case extensionConfigDefinition
     }
     
     public init(from decoder: Decoder) throws {
@@ -474,5 +493,9 @@ public struct BookSource: Codable, Identifiable, Equatable {
         self.eventListener = try container.decodeIfPresent(Bool.self, forKey: .eventListener) ?? false
         self.customButton = try container.decodeIfPresent(Bool.self, forKey: .customButton) ?? false
         self.markdownExportRule = try container.decodeIfPresent(MarkdownExportRule.self, forKey: .markdownExportRule)
+        self.isExtension = try container.decodeIfPresent(Bool.self, forKey: .isExtension) ?? false
+        self.extensionId = try container.decodeIfPresent(String.self, forKey: .extensionId)
+        self.extensionConfig = try container.decodeIfPresent(String.self, forKey: .extensionConfig)
+        self.extensionConfigDefinition = try container.decodeIfPresent(String.self, forKey: .extensionConfigDefinition)
     }
 }

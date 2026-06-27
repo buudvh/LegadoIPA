@@ -327,6 +327,40 @@ public struct ExploreView: View {
         self.selectedCategoryIndex = nil
         self.isExploringMode = false
         
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let engine = VBookExtensionEngine(extensionId: extId)
+            do {
+                var jsResult = try? await engine.executeScript(scriptName: "home.js", source: source)
+                if jsResult == nil || jsResult?.objectForKeyedSubscript("data")?.isUndefined == true {
+                    jsResult = try? await engine.executeScript(scriptName: "genre.js", source: source)
+                }
+                
+                if let jsResult = jsResult,
+                   let dataVal = jsResult.objectForKeyedSubscript("data"),
+                   dataVal.isArray {
+                    
+                    var categories: [(name: String, url: String)] = []
+                    let array = dataVal.toArray() ?? []
+                    for item in array {
+                        if let dict = item as? [String: Any],
+                           let title = dict["title"] as? String,
+                           let input = dict["input"] as? String,
+                           let script = dict["script"] as? String {
+                            // Định tuyến động dạng "tên_script|tham_số_input"
+                            categories.append((name: title, url: "\(script)|\(input)"))
+                        }
+                    }
+                    DispatchQueue.main.async {
+                        self.exploreCategories = categories
+                    }
+                    return
+                }
+            } catch {
+                Logger.shared.log("Extension load explore categories error: \(error)")
+            }
+        }
+        
         guard let exploreUrlStr = source.exploreUrl, !exploreUrlStr.isEmpty else { return }
         
         // Dịch exploreUrl sang tiếng Việt
@@ -356,6 +390,61 @@ public struct ExploreView: View {
         searchResults = []
         
         let source = sources[selectedSourceIndex]
+        
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let parts = categoryUrl.components(separatedBy: "|")
+            guard parts.count >= 2 else {
+                isSearching = false
+                return
+            }
+            let scriptName = parts[0]
+            let inputUrl = parts[1]
+            
+            let engine = VBookExtensionEngine(extensionId: extId)
+            do {
+                let jsResult = try await engine.executeScript(scriptName: scriptName, source: source, arguments: [inputUrl, String(page)])
+                if let dataVal = jsResult.objectForKeyedSubscript("data"), dataVal.isArray {
+                    var parsedBooks: [Book] = []
+                    let array = dataVal.toArray() ?? []
+                    
+                    for item in array {
+                        guard let dict = item as? [String: Any],
+                              let name = dict["name"] as? String,
+                              let link = dict["link"] as? String else {
+                            continue
+                        }
+                        
+                        let author = dict["author"] as? String ?? ""
+                        let cover = dict["cover"] as? String ?? ""
+                        let desc = dict["description"] as? String ?? ""
+                        
+                        let book = Book(
+                            bookUrl: link,
+                            name: name,
+                            author: author.isEmpty ? nil : author,
+                            coverUrl: cover.isEmpty ? nil : cover,
+                            intro: desc.isEmpty ? nil : desc,
+                            origin: source.bookSourceUrl,
+                            originName: source.bookSourceName
+                        )
+                        parsedBooks.append(book)
+                    }
+                    
+                    DispatchQueue.main.async {
+                        self.searchResults = parsedBooks
+                        self.isSearching = false
+                    }
+                    return
+                }
+            } catch {
+                Logger.shared.log("Extension performExplore error: \(error)")
+                DispatchQueue.main.async {
+                    self.isSearching = false
+                }
+                return
+            }
+        }
         
         // Định dạng URL danh mục khám phá
         var finalUrlStr = categoryUrl
@@ -460,6 +549,54 @@ public struct ExploreView: View {
         searchResults = []
         
         let source = sources[selectedSourceIndex]
+        
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let engine = VBookExtensionEngine(extensionId: extId)
+            do {
+                let jsResult = try await engine.executeScript(scriptName: "search.js", source: source, arguments: [searchQuery, "1"])
+                if let dataVal = jsResult.objectForKeyedSubscript("data"), dataVal.isArray {
+                    var parsedBooks: [Book] = []
+                    let array = dataVal.toArray() ?? []
+                    
+                    for item in array {
+                        guard let dict = item as? [String: Any],
+                              let name = dict["name"] as? String,
+                              let link = dict["link"] as? String else {
+                            continue
+                        }
+                        
+                        let author = dict["author"] as? String ?? ""
+                        let cover = dict["cover"] as? String ?? ""
+                        let desc = dict["description"] as? String ?? ""
+                        
+                        let book = Book(
+                            bookUrl: link,
+                            name: name,
+                            author: author.isEmpty ? nil : author,
+                            coverUrl: cover.isEmpty ? nil : cover,
+                            intro: desc.isEmpty ? nil : desc,
+                            origin: source.bookSourceUrl,
+                            originName: source.bookSourceName
+                        )
+                        parsedBooks.append(book)
+                    }
+                    
+                    DispatchQueue.main.async {
+                        self.searchResults = parsedBooks
+                        self.isSearching = false
+                    }
+                    return
+                }
+            } catch {
+                Logger.shared.log("Extension performSearch error: \(error)")
+                DispatchQueue.main.async {
+                    self.isSearching = false
+                }
+                return
+            }
+        }
+        
         var query = searchQuery
         if source.bookSourceUrl.contains("sudugu.org") || (source.bookSourceGroup ?? "").contains("Trung Quốc") {
             query = searchQuery.addingPercentEncodingForGBK()
@@ -548,6 +685,40 @@ public struct ExploreView: View {
             isBookAdded = true
         }
         
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let engine = VBookExtensionEngine(extensionId: extId)
+            do {
+                let jsResult = try await engine.executeScript(scriptName: "detail.js", source: source, arguments: [book.bookUrl])
+                if let dataVal = jsResult.objectForKeyedSubscript("data"), !dataVal.isUndefined && !dataVal.isNull {
+                    let dict = dataVal.toDictionary() ?? [:]
+                    
+                    var updatedBook = book
+                    if let name = dict["name"] as? String, !name.isEmpty { updatedBook.name = name }
+                    if let author = dict["author"] as? String, !author.isEmpty { updatedBook.author = author }
+                    if let cover = dict["cover"] as? String, !cover.isEmpty { updatedBook.coverUrl = cover }
+                    if let desc = dict["description"] as? String, !desc.isEmpty { updatedBook.intro = desc }
+                    
+                    // Lấy số chương bằng cách gọi toc.js để đếm
+                    let tocResult = try await engine.executeScript(scriptName: "toc.js", source: source, arguments: [book.bookUrl])
+                    if let tocData = tocResult.objectForKeyedSubscript("data"), tocData.isArray {
+                        let chaptersArray = tocData.toArray() ?? []
+                        DispatchQueue.main.async {
+                            self.detailChaptersCount = chaptersArray.count
+                        }
+                    }
+                    
+                    DispatchQueue.main.async {
+                        self.selectedBookDetails = updatedBook
+                    }
+                    return
+                }
+            } catch {
+                Logger.shared.log("Extension fetchBookDetails error: \(error)")
+                return
+            }
+        }
+        
         // 2. Tải trang chi tiết sách
         let requestUrl = book.bookUrl
         let analyzeUrl = AnalyzeUrl(urlStr: requestUrl, source: source)
@@ -614,6 +785,46 @@ public struct ExploreView: View {
     private func addSelectedBookToShelf() async {
         guard let book = selectedBookDetails,
               let source = await DatabaseManager.shared.getBookSource(url: book.origin) else { return }
+        
+        // Phân nhánh chạy Extension VBook
+        if source.isExtension == true, let extId = source.extensionId {
+            let engine = VBookExtensionEngine(extensionId: extId)
+            do {
+                let jsResult = try await engine.executeScript(scriptName: "toc.js", source: source, arguments: [book.bookUrl])
+                if let dataVal = jsResult.objectForKeyedSubscript("data"), dataVal.isArray {
+                    var parsedChapters: [BookChapter] = []
+                    let array = dataVal.toArray() ?? []
+                    
+                    for (i, item) in array.enumerated() {
+                        guard let dict = item as? [String: Any],
+                              let name = dict["name"] as? String,
+                              let chapUrl = dict["url"] as? String else {
+                            continue
+                        }
+                        
+                        let chapter = BookChapter(
+                            bookUrl: book.bookUrl,
+                            index: i,
+                            title: name,
+                            url: chapUrl
+                        )
+                        parsedChapters.append(chapter)
+                    }
+                    
+                    await DatabaseManager.shared.saveBook(book)
+                    await DatabaseManager.shared.saveChapters(parsedChapters, forBookUrl: book.bookUrl)
+                    
+                    DispatchQueue.main.async {
+                        self.isBookAdded = true
+                        self.showDetailSheet = false
+                    }
+                    return
+                }
+            } catch {
+                Logger.shared.log("Extension addSelectedBookToShelf error: \(error)")
+                return
+            }
+        }
         
         // Tải toàn bộ chương và lưu vào DB
         let tocUrl = book.tocUrl.isEmpty ? book.bookUrl : book.tocUrl
