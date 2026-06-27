@@ -1,4 +1,5 @@
 import SwiftUI
+import JavaScriptCore
 
 /// Màn hình Khám phá & Tìm kiếm truyện (ExploreView)
 public struct ExploreView: View {
@@ -693,7 +694,7 @@ public struct ExploreView: View {
             do {
                 let jsResult = try await engine.executeScript(scriptName: "detail.js", source: source, arguments: [book.bookUrl])
                 if let dataVal = jsResult.objectForKeyedSubscript("data"), !dataVal.isUndefined && !dataVal.isNull {
-                    let dict = dataVal.toDictionary() ?? [:]
+                    let dict = dataVal.toDictionary() as? [String: Any] ?? [:]
                     
                     var updatedBook = book
                     if let name = dict["name"] as? String, !name.isEmpty { updatedBook.name = name }

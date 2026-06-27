@@ -1,4 +1,5 @@
 import Foundation
+import JavaScriptCore
 
 /// Lớp xuất truyện thành file Markdown (.md) dựa trên cấu hình quy tắc JSON
 public final class MarkdownExporter {
