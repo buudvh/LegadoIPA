@@ -76,10 +76,12 @@ public struct ExtensionConfigView: View {
                 leading: Button("Hủy") {
                     presentationMode.wrappedValue.dismiss()
                 },
-                trailing: Button("Lưu") {
+                trailing: Button(action: {
                     saveConfiguration()
+                }) {
+                    Text("Lưu")
+                        .bold()
                 }
-                .bold()
             )
             .onAppear(perform: loadConfiguration)
         }

@@ -331,9 +331,11 @@ public struct ExploreView: View {
         if source.isExtension == true, let extId = source.extensionId {
             let engine = VBookExtensionEngine(extensionId: extId)
             do {
-                var jsResult = try? await engine.executeScript(scriptName: "home.js", source: source)
-                if jsResult == nil || jsResult?.objectForKeyedSubscript("data")?.isUndefined == true {
-                    jsResult = try? await engine.executeScript(scriptName: "genre.js", source: source)
+                var jsResult: JSValue? = nil
+                do {
+                    jsResult = try await engine.executeScript(scriptName: "home.js", source: source)
+                } catch {
+                    jsResult = try await engine.executeScript(scriptName: "genre.js", source: source)
                 }
                 
                 if let jsResult = jsResult,

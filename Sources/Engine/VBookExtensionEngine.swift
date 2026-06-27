@@ -97,7 +97,7 @@ public final class VBookExtensionEngine {
                 if let bodyVal = options.objectForKeyedSubscript("body"), !bodyVal.isUndefined, !bodyVal.isNull {
                     if bodyVal.isString {
                         request.httpBody = bodyVal.toString().data(using: .utf8)
-                    } else if let bodyDict = bodyVal.toDictionary() {
+                    } else if let bodyDict = bodyVal.toDictionary() as? [String: Any] {
                         let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
                         if contentType.contains("application/json") {
                             request.httpBody = try? JSONSerialization.data(withJSONObject: bodyDict, options: [])
