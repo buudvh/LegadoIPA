@@ -30,3 +30,10 @@ To ensure CodeGraph's index is always accurate and synchronized with the latest 
     npx.cmd @colbymchenry/codegraph sync
     ```
 *   **Git Hooks**: Git hooks (`post-commit`, `post-checkout`, `post-merge`) have been configured to automatically run `npx @colbymchenry/codegraph sync` upon branch checkout, merge, or commit operations.
+
+## Quy định Ngôn ngữ (Language Guidelines)
+
+Để đảm bảo tính nhất quán và thuận tiện trong quá trình phát triển dự án này, tất cả các AI agent phải tuân thủ nghiêm ngặt các quy định ngôn ngữ sau:
+*   **Ngôn ngữ giao tiếp & trả lời (Replies)**: Mọi câu trả lời, phản hồi, thảo luận hoặc giải thích với người dùng (USER) phải được viết hoàn toàn bằng **tiếng Việt**.
+*   **Kế hoạch thực hiện (Plans) & Tài liệu (Documents)**: Tất cả các kế hoạch triển khai thiết kế (`implementation_plan.md`), danh sách nhiệm vụ (`task.md`), báo cáo tổng hợp thay đổi (`walkthrough.md`) và tài liệu liên quan phải được soạn thảo hoàn toàn bằng **tiếng Việt**.
+

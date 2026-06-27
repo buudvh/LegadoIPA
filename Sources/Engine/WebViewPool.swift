@@ -32,8 +32,7 @@ public final class PooledWebView: NSObject, WKNavigationDelegate {
             throw NSError(domain: "PooledWebView", code: 401, userInfo: [NSLocalizedDescriptionKey: "URL không hợp lệ"])
         }
         
-        timeoutTask?.cancel()
-        timeoutTask = nil
+        cancelTimeoutTask()
         
         self.jsToEvaluate = jsCode
         self.isPageLoaded = false
@@ -47,8 +46,8 @@ public final class PooledWebView: NSObject, WKNavigationDelegate {
             // Bắt đầu tải trang
             self.webView.load(URLRequest(url: url))
             
-            // Xử lý timeout
-            timeoutTask = Task { [weak self] in
+            // Xử lý timeout an toàn trên @MainActor để tránh Data Race
+            timeoutTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 guard let self = self else { return }
                 if Task.isCancelled { return }
@@ -56,31 +55,61 @@ public final class PooledWebView: NSObject, WKNavigationDelegate {
                 if !self.isPageLoaded && self.completion != nil {
                     self.webView.stopLoading()
                     let err = NSError(domain: "PooledWebView", code: 408, userInfo: [NSLocalizedDescriptionKey: "WebView nạp trang quá thời gian chờ (Timeout)"])
-                    self.completion?(.failure(err))
+                    let comp = self.completion
                     self.completion = nil
+                    self.cleanUpAndFinish(with: .failure(err))
+                    comp?(.failure(err))
                 }
             }
         }
     }
     
-    private func cleanUpAndFinish(with result: Result<String, Error>) {
+    private func cancelTimeoutTask() {
         timeoutTask?.cancel()
         timeoutTask = nil
+    }
+    
+    private func cleanUpAndFinish(with result: Result<String, Error>) {
+        cancelTimeoutTask()
         jsToEvaluate = nil
+    }
+    
+    /// Chuẩn bị tái sử dụng: Reset trạng thái và tải trang trống an toàn
+    public func prepareForReuse() {
+        cancelTimeoutTask()
+        self.completion = nil
+        self.jsToEvaluate = nil
+        self.isPageLoaded = false
+        
+        // Hủy delegate tạm thời khi tải trang blank để tránh kích hoạt didFinish ngoài ý muốn
+        self.webView.navigationDelegate = nil
+        self.webView.stopLoading()
+        self.webView.load(URLRequest(url: URL(string: "about:blank")!))
+        self.webView.navigationDelegate = self
+    }
+    
+    /// Hủy hoàn toàn các kết nối và dừng tải
+    public func destroy() {
+        cancelTimeoutTask()
+        self.completion = nil
+        self.jsToEvaluate = nil
+        self.webView.navigationDelegate = nil
+        self.webView.stopLoading()
     }
     
     // MARK: - WKNavigationDelegate
     
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Bỏ qua sự kiện tải trang blank dọn dẹp
+        if webView.url?.absoluteString == "about:blank" { return }
+        
         self.isPageLoaded = true
-        timeoutTask?.cancel()
-        timeoutTask = nil
+        cancelTimeoutTask()
         
         guard let js = jsToEvaluate, let comp = completion else { return }
         self.jsToEvaluate = nil
         self.completion = nil
         
-        // Thực thi mã JS sau khi nạp trang hoàn tất
         webView.evaluateJavaScript(js) { val, err in
             if let err = err {
                 comp(.failure(err))
@@ -91,17 +120,19 @@ public final class PooledWebView: NSObject, WKNavigationDelegate {
     }
     
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if webView.url?.absoluteString == "about:blank" { return }
         if let comp = completion {
-            cleanUpAndFinish(with: .failure(error))
             self.completion = nil
+            cleanUpAndFinish(with: .failure(error))
             comp(.failure(error))
         }
     }
     
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if webView.url?.absoluteString == "about:blank" { return }
         if let comp = completion {
-            cleanUpAndFinish(with: .failure(error))
             self.completion = nil
+            cleanUpAndFinish(with: .failure(error))
             comp(.failure(error))
         }
     }
@@ -132,10 +163,20 @@ public final class WebViewPool {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { @MainActor [weak self] _ in
             guard let self = self else { return }
-            // Xóa sạch pool khi nhận cảnh báo bộ nhớ để giải phóng tiến trình WebKit con
+            
+            // Hủy triệt để các WebView rảnh rỗi
+            for webView in self.idlePool {
+                webView.destroy()
+            }
             self.idlePool.removeAll()
+            
+            // Dọn dẹp cache WebKit trên disk và memory để giải phóng RAM tối đa
+            WKWebsiteDataStore.default().removeData(
+                ofTypes: [WKWebsiteDataStoreRecordTypeDiskCache, WKWebsiteDataStoreRecordTypeMemoryCache],
+                modifiedSince: Date.distantPast
+            ) {}
         }
     }
     
@@ -149,12 +190,14 @@ public final class WebViewPool {
     
     /// Trả lại WebView về bể chứa sau khi sử dụng
     public func release(_ pooledWebView: PooledWebView) {
-        // Clear trạng thái bằng cách load trang trống
-        pooledWebView.webView.load(URLRequest(url: URL(string: "about:blank")!))
+        pooledWebView.prepareForReuse()
         
         // Chỉ lưu giữ lại WebView trong pool nếu chưa vượt quá số lượng tối đa
         if idlePool.count < maxPoolSize {
             idlePool.append(pooledWebView)
+        } else {
+            // Giải phóng triệt để nếu pool đã đầy
+            pooledWebView.destroy()
         }
     }
     

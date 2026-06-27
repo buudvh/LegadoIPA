@@ -18,7 +18,9 @@ public final class AnalyzeRule {
         lock.lock()
         defer { lock.unlock() }
         if let context = _jsContext { return context }
-        let context = JSContext() ?? JSContext()
+        guard let context = JSContext() else {
+            fatalError("Failed to create JSContext")
+        }
         JSBridge.setupContext(context, withBaseUrl: baseUrl, source: source)
         for (key, val) in ruleData {
             context.setObject(val, forKeyedSubscript: key as NSString)
@@ -156,7 +158,7 @@ public final class AnalyzeRule {
                     results.append(html)
                 }
             } else {
-                let attrValue = element.attr(attr)
+                let attrValue = (try? element.attr(attr)) ?? ""
                 results.append(attrValue)
             }
         }
@@ -196,7 +198,7 @@ public final class AnalyzeRule {
         guard let val = jsVal else { return [] }
         
         if val.isArray {
-            if let array = val.toArray() as? [Any] {
+            if let array = val.toArray() {
                 return array.map { String(describing: $0) }
             }
         }
@@ -218,7 +220,7 @@ public final class AnalyzeRule {
         guard let val = jsVal else { return [] }
         
         if val.isArray {
-            if let array = val.toArray() as? [Any] {
+            if let array = val.toArray() {
                 return array.map { String(describing: $0) }
             }
         }

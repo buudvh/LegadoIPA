@@ -20,7 +20,7 @@ public final class RuleAnalyzer {
     }
     
     private func chompBalanced(open: Character, close: Character) -> Bool {
-        return code ? chompCodeBalanced(open: open, close: close) : chompRuleBalanced(open: open, close: close)
+        return code ? chompCodeBalanced(open, close) : chompRuleBalanced(open, close)
     }
     
     private func trim() {
@@ -54,7 +54,7 @@ public final class RuleAnalyzer {
                 let seqChars = Array(seq)
                 if tempPos + seqChars.count <= chars.count {
                     let sub = chars[tempPos..<(tempPos + seqChars.count)]
-                    if sub == seqChars {
+                    if sub.elementsEqual(seqChars) {
                         step = seqChars.count
                         self.pos = tempPos
                         return true
@@ -257,7 +257,9 @@ public final class RuleAnalyzer {
             pos = st
             let chars = Array(queue)
             let nextChar: Character = chars[pos] == "[" ? "]" : ")"
-            _ = chompBalanced(open: chars[pos], close: nextChar)
+            if !chompBalanced(open: chars[pos], close: nextChar) {
+                pos = st + 1
+            }
             
             if end <= pos {
                 break
@@ -318,7 +320,9 @@ public final class RuleAnalyzer {
             pos = st
             let chars = Array(queue)
             let nextChar: Character = chars[pos] == "[" ? "]" : ")"
-            _ = chompBalanced(open: chars[pos], close: nextChar)
+            if !chompBalanced(open: chars[pos], close: nextChar) {
+                pos = st + 1
+            }
             
             if end <= pos {
                 break

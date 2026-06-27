@@ -15,7 +15,8 @@ public final class NetworkManager: NSObject, URLSessionDelegate, URLSessionTaskD
         configuration.httpCookieStorage = HTTPCookieStorage.shared
         configuration.httpShouldSetCookies = true
         
-        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+        // Đảm bảo tất cả delegate callbacks chạy trên luồng chính để tránh race condition trên Cookie Storage
+        self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
     }
     
     /// Thực hiện gửi yêu cầu cào dữ liệu và trả về nội dung text (UTF-8 hoặc tương tự)
@@ -25,17 +26,15 @@ public final class NetworkManager: NSObject, URLSessionDelegate, URLSessionTaskD
         }
         
         // Đảm bảo chạy đồng bộ trên MainActor
-        await MainActor.run {
-            await syncCookiesFromWebViewToStorage()
-        }
+        await syncCookiesFromWebViewToStorage()
         
         let (data, response) = try await session.data(for: request)
         
-        // Đồng bộ ngược toàn bộ cookie (kể cả cookie từ redirect tự động) vào WKWebView
-        if let url = request.url {
-            await MainActor.run {
-                await syncCookiesToWebView(for: url)
-            }
+        // Đồng bộ ngược cookie từ URL thực tế sau redirect (response.url) thay vì request.url gốc
+        if let responseURL = response.url {
+            await syncCookiesToWebView(for: responseURL)
+        } else if let requestURL = request.url {
+            await syncCookiesToWebView(for: requestURL)
         }
         
         // Giải mã nội dung
@@ -76,27 +75,18 @@ public final class NetworkManager: NSObject, URLSessionDelegate, URLSessionTaskD
         }
     }
     
-    /// Đồng bộ toàn bộ cookie liên quan đến URL từ HTTPCookieStorage sang WKWebView song song
+    /// Đồng bộ toàn bộ cookie liên quan đến URL từ HTTPCookieStorage sang WKWebView tuần tự
     @MainActor
     public func syncCookiesToWebView(for url: URL) async {
         guard let cookies = HTTPCookieStorage.shared.cookies(for: url) else { return }
-        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
-        
-        await withTaskGroup(of: Void.self) { group in
-            for cookie in cookies {
-                group.addTask {
-                    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                        cookieStore.setCookie(cookie) {
-                            continuation.resume()
-                        }
-                    }
-                }
-            }
-            await group.waitForAll()
+        // Ghi tuần tự tránh overhead tạo TaskGroup không cần thiết trên MainActor
+        for cookie in cookies {
+            await syncCookieToWebView(cookie)
         }
     }
     
     // MARK: - URLSessionTaskDelegate HTTP Redirection Handling
+    @MainActor
     public func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -104,15 +94,19 @@ public final class NetworkManager: NSObject, URLSessionDelegate, URLSessionTaskD
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        // Callback này hiện chạy an toàn trên MainThread nhờ delegateQueue: .main
         if let url = response.url {
             let cookies = HTTPCookie.cookies(withResponseHeaderFields: response.allHeaderFields as? [String: String] ?? [:], for: url)
-            for cookie in cookies {
-                HTTPCookieStorage.shared.setCookie(cookie)
-                Task { @MainActor in
+            
+            Task {
+                for cookie in cookies {
+                    HTTPCookieStorage.shared.setCookie(cookie)
                     await self.syncCookieToWebView(cookie)
                 }
+                completionHandler(request)
             }
+        } else {
+            completionHandler(request)
         }
-        completionHandler(request)
     }
 }

@@ -71,7 +71,8 @@ public final class TranslateUtils {
         }
         
         // Trích xuất phần số và đơn vị
-        guard let numRange = Range(match.range(at: 1), in: text),
+        guard let matchRange = Range(match.range, in: text),
+              let numRange = Range(match.range(at: 1), in: text),
               let unitRange = Range(match.range(at: 2), in: text) else {
             return await translateMeta(text)
         }
@@ -85,14 +86,8 @@ public final class TranslateUtils {
         let chapterPart = "\(unitVi) \(number)"
         
         // Dịch phần trước và sau match
-        let matchStart = match.range.location
-        let matchEnd = match.range.location + match.range.length
-        
-        let preMatchRange = text.startIndex..<text.index(text.startIndex, offsetBy: matchStart)
-        let postMatchRange = text.index(text.startIndex, offsetBy: matchEnd)..<text.endIndex
-        
-        let preMatch = String(text[preMatchRange])
-        let postMatch = String(text[postMatchRange])
+        let preMatch = String(text[..<matchRange.lowerBound])
+        let postMatch = String(text[matchRange.upperBound...])
         
         let translatedPre = preMatch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : await translateMeta(preMatch) + " "
         let translatedPostRaw = postMatch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : (await translateMeta(postMatch)).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -189,6 +184,11 @@ public final class TranslateUtils {
         return translated
     }
     
+    private struct TranslatedToken {
+        let rawText: String
+        let translation: String?
+    }
+    
     private static func performTranslation(_ text: String) async -> String {
         guard let data = try? await TranslationLoader.shared.loadTranslationData() else {
             return text
@@ -197,30 +197,30 @@ public final class TranslateUtils {
         // Bước 1: Chuyển đổi dấu câu
         let convertedText = convertPunctuation(text)
         
-        // Bước 2: Tách từ
+        // Bước 2: Tách từ & Tra cứu Trie đồng thời
         let tokens = tokenize(convertedText, data: data)
         
         // Bước 3: Dịch nghĩa & Phiên âm
         var translatedWords: [String] = []
         for token in tokens {
-            if token == "的" || token == "了" || token == "著" {
+            if token.rawText == "的" || token.rawText == "了" || token.rawText == "著" {
                 continue
             }
             
-            var translation = searchInDictionaries(token, data: data)
+            var translation = token.translation
             if let trans = translation {
                 if trans.contains("/") {
                     translation = trans.components(separatedBy: "/").first
                 }
             } else {
-                translation = token
+                translation = token.rawText
             }
             
             let finalWord: String
-            if translation == token {
-                finalWord = data.chinesePhienAm[token] ?? " \(token) "
+            if translation == token.rawText {
+                finalWord = data.chinesePhienAm[token.rawText] ?? " \(token.rawText) "
             } else {
-                finalWord = translation ?? token
+                finalWord = translation ?? token.rawText
             }
             
             translatedWords.append(finalWord)
@@ -239,18 +239,18 @@ public final class TranslateUtils {
         var result = ""
         
         for token in tokens {
-            if token.isEmpty { continue }
+            if token.rawText.isEmpty { continue }
             
-            guard let firstChar = token.first, isChineseCharacter(firstChar) else {
-                result += token
+            guard let firstChar = token.rawText.first?.unicodeScalars.first, isChineseCharacter(firstChar) else {
+                result += token.rawText
                 continue
             }
             
-            if token == "的" || token == "了" || token == "著" {
+            if token.rawText == "的" || token.rawText == "了" || token.rawText == "著" {
                 continue
             }
             
-            var translation = searchInDictionaries(token, data: data)
+            var translation = token.translation
             if let trans = translation {
                 if trans.contains("/") {
                     translation = trans.components(separatedBy: "/").first
@@ -261,13 +261,13 @@ public final class TranslateUtils {
                 }
                 result += translation ?? ""
             } else {
-                if let phienAm = data.chinesePhienAm[token] {
+                if let phienAm = data.chinesePhienAm[token.rawText] {
                     if let lastChar = result.last, lastChar.isLetter || lastChar.isNumber {
                         result += " "
                     }
                     result += phienAm
                 } else {
-                    result += token
+                    result += token.rawText
                 }
             }
         }
@@ -275,29 +275,21 @@ public final class TranslateUtils {
         return result
     }
     
-    private static func searchInDictionaries(_ key: String, data: TranslationData) -> String? {
-        if let match = data.names.findLongestMatch(text: key, startIndex: 0), match.0 == key.count {
-            return match.1
-        }
-        if let match = data.vietPhrase.findLongestMatch(text: key, startIndex: 0), match.0 == key.count {
-            return match.1
-        }
-        return nil
-    }
-    
-    private static func tokenize(_ text: String, data: TranslationData) -> [String] {
-        var output: [String] = []
+    private static func tokenize(_ text: String, data: TranslationData) -> [TranslatedToken] {
+        var output: [TranslatedToken] = []
         let scalars = Array(text.unicodeScalars)
         let length = scalars.count
         var currentIndex = 0
         
         while currentIndex < length {
             var longestMatchLen = 0
+            var foundTranslation: String? = nil
             
             // Tìm trong từ điển Names
             if let match = data.names.findLongestMatch(chars: scalars, startIndex: currentIndex) {
                 if match.0 > longestMatchLen {
                     longestMatchLen = match.0
+                    foundTranslation = match.1
                 }
             }
             
@@ -305,6 +297,7 @@ public final class TranslateUtils {
             if let match = data.vietPhrase.findLongestMatch(chars: scalars, startIndex: currentIndex) {
                 if match.0 > longestMatchLen {
                     longestMatchLen = match.0
+                    foundTranslation = match.1
                 }
             }
             
@@ -314,12 +307,13 @@ public final class TranslateUtils {
                 for idx in currentIndex..<(currentIndex + longestMatchLen) {
                     tokenScalars.append(scalars[idx])
                 }
-                output.append(String(String.UnicodeScalarView(tokenScalars)))
+                let rawStr = String(String.UnicodeScalarView(tokenScalars))
+                output.append(TranslatedToken(rawText: rawStr, translation: foundTranslation))
                 currentIndex += longestMatchLen
             } else {
                 let scalar = scalars[currentIndex]
                 if isChineseCharacter(scalar) {
-                    output.append(String(scalar))
+                    output.append(TranslatedToken(rawText: String(scalar), translation: nil))
                     currentIndex += 1
                 } else {
                     // Nhóm các ký tự Latin/số/dấu câu
@@ -329,7 +323,7 @@ public final class TranslateUtils {
                         nonCnStr.append(Character(scalars[currentIndex]))
                         currentIndex += 1
                     }
-                    output.append(nonCnStr)
+                    output.append(TranslatedToken(rawText: nonCnStr, translation: nil))
                 }
             }
         }

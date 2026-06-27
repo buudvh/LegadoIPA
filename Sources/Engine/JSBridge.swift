@@ -11,7 +11,7 @@ public final class JSBridge {
         
         // Tiêm đối tượng "java" vào context để tương thích các nguồn sách cũ của Android
         let javaObject = JSValue(newObjectIn: context)
-        context?.setObject(javaObject, forKeyedSubscript: "java" as NSString)
+        context.setObject(javaObject, forKeyedSubscript: "java" as NSString)
         
         // Đăng ký các phương thức của Bridge lên đối tượng "java" và phạm vi toàn cục (global)
         
@@ -20,7 +20,7 @@ public final class JSBridge {
             return bridge.syncAjax(url: urlStr, baseUrl: baseUrl, source: source)
         }
         javaObject?.setObject(ajaxBlock, forKeyedSubscript: "ajax" as NSString)
-        context?.setObject(ajaxBlock, forKeyedSubscript: "ajax" as NSString)
+        context.setObject(ajaxBlock, forKeyedSubscript: "ajax" as NSString)
         
         // 2. MD5 Encode
         let md5Block: @convention(block) (String) -> String = { str in
@@ -28,7 +28,7 @@ public final class JSBridge {
         }
         javaObject?.setObject(md5Block, forKeyedSubscript: "md5Encode" as NSString)
         javaObject?.setObject(md5Block, forKeyedSubscript: "md5Encode16" as NSString) // Fallback
-        context?.setObject(md5Block, forKeyedSubscript: "md5Encode" as NSString)
+        context.setObject(md5Block, forKeyedSubscript: "md5Encode" as NSString)
         
         // 3. Base64 Encode/Decode
         let base64EncodeBlock: @convention(block) (String) -> String = { str in
@@ -43,8 +43,8 @@ public final class JSBridge {
         }
         javaObject?.setObject(base64EncodeBlock, forKeyedSubscript: "base64Encode" as NSString)
         javaObject?.setObject(base64DecodeBlock, forKeyedSubscript: "base64Decode" as NSString)
-        context?.setObject(base64EncodeBlock, forKeyedSubscript: "base64Encode" as NSString)
-        context?.setObject(base64DecodeBlock, forKeyedSubscript: "base64Decode" as NSString)
+        context.setObject(base64EncodeBlock, forKeyedSubscript: "base64Encode" as NSString)
+        context.setObject(base64DecodeBlock, forKeyedSubscript: "base64Decode" as NSString)
         
         // 4. URL Encode/Decode
         let urlEncodeBlock: @convention(block) (String) -> String = { str in
@@ -57,19 +57,19 @@ public final class JSBridge {
         }
         javaObject?.setObject(urlEncodeBlock, forKeyedSubscript: "utf8Encode" as NSString)
         javaObject?.setObject(urlDecodeBlock, forKeyedSubscript: "utf8Decode" as NSString)
-        context?.setObject(urlEncodeBlock, forKeyedSubscript: "utf8Encode" as NSString)
-        context?.setObject(urlDecodeBlock, forKeyedSubscript: "utf8Decode" as NSString)
+        context.setObject(urlEncodeBlock, forKeyedSubscript: "utf8Encode" as NSString)
+        context.setObject(urlDecodeBlock, forKeyedSubscript: "utf8Decode" as NSString)
         
         // 5. Console Log
         let logBlock: @convention(block) (String) -> Void = { msg in
             print("[JS Logger] \(msg)")
         }
         javaObject?.setObject(logBlock, forKeyedSubscript: "log" as NSString)
-        context?.setObject(logBlock, forKeyedSubscript: "log" as NSString)
+        context.setObject(logBlock, forKeyedSubscript: "log" as NSString)
         
         // Tiêm các biến môi trường
         if let baseUrl = baseUrl {
-            context?.setObject(baseUrl, forKeyedSubscript: "baseUrl" as NSString)
+            context.setObject(baseUrl, forKeyedSubscript: "baseUrl" as NSString)
             javaObject?.setObject(baseUrl, forKeyedSubscript: "baseUrl" as NSString)
         }
     }

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 
 /// Trình quản lý cơ sở dữ liệu nội bộ bằng giải pháp lưu trữ JSON File Persistence bảo mật, an toàn, nhanh chóng và không phụ thuộc thư viện ngoài (Zero Dependency)
 public actor DatabaseManager {
@@ -11,25 +14,13 @@ public actor DatabaseManager {
     private var isCorrupted = false
     
     private init() {
-        // Tải dữ liệu từ ổ đĩa khi khởi tạo
-        loadAllData()
-    }
-    
-    private var databaseDirectoryURL: URL {
         let fileManager = FileManager.default
         let documentDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dbDir = documentDir.appendingPathComponent("Database", isDirectory: true)
-        try? fileManager.createDirectory(at: dbDir, withIntermediateDirectories: true)
-        return dbDir
-    }
-    
-    // MARK: - Core Load / Save Operations
-    
-    private func loadAllData() {
-        let fileManager = FileManager.default
+        let dbURL = documentDir.appendingPathComponent("Database", isDirectory: true)
+        try? fileManager.createDirectory(at: dbURL, withIntermediateDirectories: true)
         
         // 1. Load BookSources
-        let sourcesURL = databaseDirectoryURL.appendingPathComponent("book_sources.json")
+        let sourcesURL = dbURL.appendingPathComponent("book_sources.json")
         if fileManager.fileExists(atPath: sourcesURL.path) {
             do {
                 let data = try Data(contentsOf: sourcesURL)
@@ -44,7 +35,7 @@ public actor DatabaseManager {
         }
         
         // 2. Load Books
-        let booksURL = databaseDirectoryURL.appendingPathComponent("books.json")
+        let booksURL = dbURL.appendingPathComponent("books.json")
         if fileManager.fileExists(atPath: booksURL.path) {
             do {
                 let data = try Data(contentsOf: booksURL)
@@ -59,7 +50,7 @@ public actor DatabaseManager {
         }
         
         // 3. Load ReplaceRules
-        let rulesURL = databaseDirectoryURL.appendingPathComponent("replace_rules.json")
+        let rulesURL = dbURL.appendingPathComponent("replace_rules.json")
         if fileManager.fileExists(atPath: rulesURL.path) {
             do {
                 let data = try Data(contentsOf: rulesURL)
@@ -75,6 +66,16 @@ public actor DatabaseManager {
             }
         }
     }
+    
+    private var databaseDirectoryURL: URL {
+        let fileManager = FileManager.default
+        let documentDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dbDir = documentDir.appendingPathComponent("Database", isDirectory: true)
+        try? fileManager.createDirectory(at: dbDir, withIntermediateDirectories: true)
+        return dbDir
+    }
+    
+    // MARK: - Core Load / Save Operations
     
     private func saveBookSourcesToDisk() {
         guard !isCorrupted else { return }

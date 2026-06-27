@@ -328,7 +328,7 @@ struct PageViewControllerRepresentable: UIViewControllerRepresentable {
     var onSwipePastStart: () -> Void
     
     func makeUIViewController(context: Context) -> UIPageViewController {
-        let pageVC = UIPageViewController(navigationOrientation: .horizontal, transitionStyle: .pageCurl, options: nil)
+        let pageVC = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal, options: nil)
         pageVC.dataSource = context.coordinator
         pageVC.delegate = context.coordinator
         

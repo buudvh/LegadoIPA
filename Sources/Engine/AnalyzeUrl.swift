@@ -108,7 +108,7 @@ public final class AnalyzeUrl {
         
         // Tái sử dụng JSContext trong cùng một request của URL để tránh overhead
         if sharedJSContext == nil {
-            let context = JSContext() ?? JSContext()
+            guard let context = JSContext() else { return text }
             JSBridge.setupContext(context, withBaseUrl: nil, source: source)
             for (key, val) in ruleData {
                 context.setObject(val, forKeyedSubscript: key as NSString)

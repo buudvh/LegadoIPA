@@ -41,7 +41,8 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
 
     /// Phiên bản tối ưu: Sử dụng mảng Unicode.Scalar đã được phân rã sẵn bên ngoài để tránh cấp phát lặp lại O(N)
     public func findLongestMatch(chars: [Unicode.Scalar], startIndex: Int) -> (Int, String)? {
-        guard startIndex < chars.count else { return nil }
+        guard base.count > 1 && check.count > 1 else { return nil }
+        guard startIndex >= 0 && startIndex < chars.count else { return nil }
         
         var currentState: Int32 = 1
         var matchLen = -1
@@ -84,11 +85,17 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
             // Lấy chuỗi từ stringPool dựa trên offset
             let offset = Int(matchStringPoolOffset)
             if offset + 2 <= stringPool.count {
-                let lenBytes = stringPool.subdata(in: offset..<offset+2)
-                let strLen = Int(UInt16(bigEndian: lenBytes.withUnsafeBytes { $0.load(as: UInt16.self) }))
+                // Tối ưu hóa hiệu năng: Tránh subdata cấp phát Heap và tránh UB Alignment bằng loadUnaligned
+                let strLen = stringPool.withUnsafeBytes { rawBuffer -> Int in
+                    let u16Val = rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt16.self)
+                    return Int(UInt16(bigEndian: u16Val))
+                }
                 if offset + 2 + strLen <= stringPool.count {
-                    let strData = stringPool.subdata(in: (offset + 2)..<(offset + 2 + strLen))
-                    if let valStr = String(data: strData, encoding: .utf8) {
+                    if let valStr = stringPool.withUnsafeBytes({ rawBuffer -> String? in
+                        guard let baseAddress = rawBuffer.baseAddress else { return nil }
+                        let ptr = baseAddress.advanced(by: offset + 2).assumingMemoryBound(to: UInt8.self)
+                        return String(bytes: UnsafeBufferPointer(start: ptr, count: strLen), encoding: .utf8)
+                    }) {
                         return (matchLen, valStr)
                     }
                 }
@@ -135,6 +142,11 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
         fastCharMap = [Int32](repeating: 0, count: 65536)
         charMap.removeAll(keepingCapacity: true)
         
+        // Sửa lỗi bảo mật: Kiểm tra kích thước file trước khi lặp tránh Out of Bounds
+        guard 24 + charMapSize * 8 <= data.count else {
+            throw NSError(domain: "DoubleArrayTrie", code: 104, userInfo: [NSLocalizedDescriptionKey: "File bị hỏng, charMap vượt quá kích thước file"])
+        }
+        
         var offset = 24
         for _ in 0..<charMapSize {
             let charCode = data.readBigEndianInt32(at: offset)
@@ -165,18 +177,20 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
         base = [Int32](repeating: 0, count: baseLen)
         check = [Int32](repeating: 0, count: baseLen)
         
-        // Sửa lỗi Memory Alignment: Dùng copyBytes thay vì bindMemory trực tiếp từ raw pointer
+        // Tối ưu hóa bộ nhớ: copyBytes trực tiếp vào mảng base/check để tránh tạo mảng temp trung gian khổng lồ
         let baseByteCount = baseLen * 4
-        var tempBase = [Int32](repeating: 0, count: baseLen)
-        _ = data.copyBytes(to: UnsafeMutableBufferPointer(start: &tempBase, count: baseLen), from: baseByteOffset..<(baseByteOffset + baseByteCount))
+        base.withUnsafeMutableBufferPointer { buffer in
+            _ = data.copyBytes(to: buffer, from: baseByteOffset..<(baseByteOffset + baseByteCount))
+        }
         for i in 0..<baseLen {
-            base[i] = Int32(bigEndian: tempBase[i])
+            base[i] = Int32(bigEndian: base[i])
         }
         
-        var tempCheck = [Int32](repeating: 0, count: baseLen)
-        _ = data.copyBytes(to: UnsafeMutableBufferPointer(start: &tempCheck, count: baseLen), from: checkByteOffset..<(checkByteOffset + baseByteCount))
+        check.withUnsafeMutableBufferPointer { buffer in
+            _ = data.copyBytes(to: buffer, from: checkByteOffset..<(checkByteOffset + baseByteCount))
+        }
         for i in 0..<baseLen {
-            check[i] = Int32(bigEndian: tempCheck[i])
+            check[i] = Int32(bigEndian: check[i])
         }
         
         // Đọc string pool
@@ -341,7 +355,11 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
             if parent.depth < key.count {
                 let charIndex = key.index(key.startIndex, offsetBy: parent.depth)
                 let char = key[charIndex]
-                code = charMap[char] ?? 0
+                if let scalar = char.unicodeScalars.first {
+                    code = charMap[scalar] ?? 0
+                } else {
+                    code = 0
+                }
             } else {
                 code = 0
             }
@@ -465,7 +483,10 @@ public final class DoubleArrayTrie: TrieDictionaryProtocol {
 // MARK: - Extension Helper đọc Big Endian
 extension Data {
     fileprivate func readBigEndianInt32(at offset: Int) -> Int32 {
-        let val = self.subdata(in: offset..<offset+4).withUnsafeBytes { $0.load(as: Int32.self) }
+        guard offset + 4 <= self.count else { return 0 }
+        let val = self.withUnsafeBytes { rawBuffer in
+            rawBuffer.loadUnaligned(fromByteOffset: offset, as: Int32.self)
+        }
         return Int32(bigEndian: val)
     }
 }

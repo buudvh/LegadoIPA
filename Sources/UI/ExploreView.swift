@@ -216,12 +216,7 @@ public struct ExploreView: View {
         let analyzeUrl = AnalyzeUrl(urlStr: searchUrlStr, source: source)
         
         do {
-            let htmlResponse = try? await NetworkManager.shared.request(analyzeUrl)
-            guard let html = htmlResponse else {
-                isSearching = false
-                return
-            }
-            
+            let html = try await NetworkManager.shared.request(analyzeUrl)
             let analyzer = AnalyzeRule(content: html, baseUrl: searchUrlStr, source: source)
             
             guard let ruleSearch = source.ruleSearch else {
