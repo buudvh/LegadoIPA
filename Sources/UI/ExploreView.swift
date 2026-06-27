@@ -206,7 +206,7 @@ public struct ExploreView: View {
         searchResults = []
         
         let source = sources[selectedSourceIndex]
-        let query = searchQuery
+        let query = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? searchQuery
         
         // Cấu hình URL tìm kiếm
         // Android dùng: searchUrl: "https://example.com/search?key={key}"

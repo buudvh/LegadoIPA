@@ -1,0 +1,45 @@
+[
+  {
+    "bookSourceName": "速读谷 (Sudugu)",
+    "bookSourceUrl": "https://www.sudugu.org/",
+    "bookSourceType": 0,
+    "bookSourceGroup": "Trung Quốc",
+    "customOrder": 0,
+    "enabled": true,
+    "enabledExplore": false,
+    "enabledCookieJar": true,
+    "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"\n}",
+    "bookSourceComment": "Nguồn sách được tạo tự động bởi Antigravity AI",
+    "lastUpdateTime": 1719480000000,
+    "respondTime": 180000,
+    "weight": 0,
+    "searchUrl": "https://www.sudugu.org/i/sor.aspx?key={key}",
+    "ruleSearch": {
+      "bookList": ".item",
+      "name": "h3@text",
+      "author": "a.2@text",
+      "bookUrl": "a.1@href",
+      "coverUrl": "img@src",
+      "kind": "span.0@text",
+      "lastChapter": "a.3@text"
+    },
+    "ruleBookInfo": {
+      "name": "[property=\"og:novel:book_name\"]@content",
+      "author": "[property=\"og:novel:author\"]@content",
+      "coverUrl": "[property=\"og:image\"]@content",
+      "intro": "[property=\"og:description\"]@content",
+      "kind": "[property=\"og:novel:category\"]@content",
+      "lastChapter": "[property=\"og:novel:latest_chapter_name\"]@content",
+      "updateTime": "[property=\"og:novel:update_time\"]@content"
+    },
+    "ruleToc": {
+      "chapterList": "#dir a",
+      "chapterName": "text",
+      "chapterUrl": "href"
+    },
+    "ruleContent": {
+      "content": ".con@text",
+      "nextContentUrl": "text.下一页@href"
+    }
+  }
+]

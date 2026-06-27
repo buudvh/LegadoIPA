@@ -379,4 +379,100 @@ public struct BookSource: Codable, Identifiable, Equatable {
         self.customButton = customButton
         self.markdownExportRule = markdownExportRule
     }
+    
+    enum CodingKeys: String, CodingKey {
+        case bookSourceUrl
+        case bookSourceName
+        case bookSourceGroup
+        case bookSourceType
+        case bookUrlPattern
+        case customOrder
+        case enabled
+        case enabledExplore
+        case jsLib
+        case enabledCookieJar
+        case concurrentRate
+        case header
+        case loginUrl
+        case loginUi
+        case loginCheckJs
+        case coverDecodeJs
+        case bookSourceComment
+        case variableComment
+        case lastUpdateTime
+        case respondTime
+        case weight
+        case exploreUrl
+        case exploreScreen
+        case ruleExplore
+        case searchUrl
+        case ruleSearch
+        case ruleBookInfo
+        case ruleToc
+        case ruleContent
+        case ruleReview
+        case eventListener
+        case customButton
+        case markdownExportRule
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        self.bookSourceUrl = try container.decode(String.self, forKey: .bookSourceUrl)
+        self.bookSourceName = try container.decode(String.self, forKey: .bookSourceName)
+        self.bookSourceGroup = try container.decodeIfPresent(String.self, forKey: .bookSourceGroup)
+        
+        if let typeInt = try container.decodeIfPresent(Int.self, forKey: .bookSourceType) {
+            self.bookSourceType = BookSourceType(rawValue: typeInt) ?? .text
+        } else if let typeStr = try container.decodeIfPresent(String.self, forKey: .bookSourceType) {
+            if let typeInt = Int(typeStr) {
+                self.bookSourceType = BookSourceType(rawValue: typeInt) ?? .text
+            } else {
+                self.bookSourceType = .text
+            }
+        } else {
+            self.bookSourceType = .text
+        }
+        
+        self.bookUrlPattern = try container.decodeIfPresent(String.self, forKey: .bookUrlPattern)
+        self.customOrder = try container.decodeIfPresent(Int.self, forKey: .customOrder) ?? 0
+        self.enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        self.enabledExplore = try container.decodeIfPresent(Bool.self, forKey: .enabledExplore) ?? true
+        self.jsLib = try container.decodeIfPresent(String.self, forKey: .jsLib)
+        self.enabledCookieJar = try container.decodeIfPresent(Bool.self, forKey: .enabledCookieJar) ?? true
+        self.concurrentRate = try container.decodeIfPresent(String.self, forKey: .concurrentRate)
+        self.header = try container.decodeIfPresent(String.self, forKey: .header)
+        self.loginUrl = try container.decodeIfPresent(String.self, forKey: .loginUrl)
+        self.loginUi = try container.decodeIfPresent(String.self, forKey: .loginUi)
+        self.loginCheckJs = try container.decodeIfPresent(String.self, forKey: .loginCheckJs)
+        self.coverDecodeJs = try container.decodeIfPresent(String.self, forKey: .coverDecodeJs)
+        self.bookSourceComment = try container.decodeIfPresent(String.self, forKey: .bookSourceComment)
+        self.variableComment = try container.decodeIfPresent(String.self, forKey: .variableComment)
+        
+        if let timeInt = try container.decodeIfPresent(Int64.self, forKey: .lastUpdateTime) {
+            self.lastUpdateTime = timeInt
+        } else if let timeStr = try container.decodeIfPresent(String.self, forKey: .lastUpdateTime), let timeInt = Int64(timeStr) {
+            self.lastUpdateTime = timeInt
+        } else {
+            self.lastUpdateTime = 0
+        }
+        
+        self.respondTime = try container.decodeIfPresent(Int64.self, forKey: .respondTime) ?? 180000
+        self.weight = try container.decodeIfPresent(Int.self, forKey: .weight) ?? 0
+        self.exploreUrl = try container.decodeIfPresent(String.self, forKey: .exploreUrl)
+        self.exploreScreen = try container.decodeIfPresent(String.self, forKey: .exploreScreen)
+        
+        self.ruleExplore = try container.decodeIfPresent(ExploreRule.self, forKey: .ruleExplore)
+        self.searchUrl = try container.decodeIfPresent(String.self, forKey: .searchUrl)
+        self.ruleSearch = try container.decodeIfPresent(SearchRule.self, forKey: .ruleSearch)
+        self.ruleBookInfo = try container.decodeIfPresent(BookInfoRule.self, forKey: .ruleBookInfo)
+        self.ruleToc = try container.decodeIfPresent(TocRule.self, forKey: .ruleToc)
+        self.ruleContent = try container.decodeIfPresent(ContentRule.self, forKey: .ruleContent)
+        self.ruleReview = try container.decodeIfPresent(ReviewRule.self, forKey: .ruleReview)
+        
+        self.eventListener = try container.decodeIfPresent(Bool.self, forKey: .eventListener) ?? false
+        self.customButton = try container.decodeIfPresent(Bool.self, forKey: .customButton) ?? false
+        self.markdownExportRule = try container.decodeIfPresent(MarkdownExportRule.self, forKey: .markdownExportRule)
+    }
 }
