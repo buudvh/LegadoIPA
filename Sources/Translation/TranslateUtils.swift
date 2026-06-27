@@ -235,7 +235,7 @@ public final class TranslateUtils {
             return text
         }
         
-        let tokens = tokenize(text, data: data)
+        let tokens = await tokenize(text, data: data)
         var result = ""
         
         for token in tokens {

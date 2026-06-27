@@ -602,6 +602,7 @@ public struct ExploreView: View {
         let tocAnalyzeUrl = AnalyzeUrl(urlStr: tocUrl, source: source)
         if let tocHtml = try? await NetworkManager.shared.request(tocAnalyzeUrl) {
             let tocAnalyzer = AnalyzeRule(content: tocHtml, baseUrl: tocUrl, source: source)
+            let chapterListRule = source.ruleToc?.chapterList ?? ""
             let chapterNodes = tocAnalyzer.getStringList(chapterListRule, isListRule: true)
             Logger.shared.log("[fetchBookDetails] TOC HTML length: \(tocHtml.count), chapterListRule: \(chapterListRule), chapters count: \(chapterNodes.count)")
             

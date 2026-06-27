@@ -3,7 +3,7 @@ import WebKit
 
 /// Trình quản lý mạng xử lý các kết nối URLSession, tự động đồng bộ hóa Cookie giữa URLSession và WKWebView
 @MainActor
-public final class NetworkManager: NSObject, URLSessionDelegate, URLSessionTaskDelegate {
+public final class NetworkManager: NSObject, @preconcurrency URLSessionDelegate, @preconcurrency URLSessionTaskDelegate {
     
     public static let shared = NetworkManager()
     
