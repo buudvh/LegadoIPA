@@ -284,38 +284,91 @@ public final class VBookExtensionEngine {
         return resolvedContent
     }
     
+    /// Phân tích plugin.json để tìm tên file script thực tế dựa trên scriptKey nghiệp vụ
+    private func getRealScriptName(scriptKey: String) -> String {
+        var cleanKey = scriptKey
+        if scriptKey.lowercased().hasSuffix(".js") {
+            cleanKey = String(scriptKey.dropLast(3))
+        }
+        
+        let extensionsDir = VBookExtensionManager.shared.extensionsDirectoryURL
+        let pluginURL = extensionsDir.appendingPathComponent(self.extensionId).appendingPathComponent("plugin.json")
+        
+        guard let data = try? Data(contentsOf: pluginURL),
+              let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+              let scriptDict = json["script"] as? [String: String] else {
+            return scriptKey.lowercased().hasSuffix(".js") ? scriptKey : "\(scriptKey).js"
+        }
+        
+        if let mapped = scriptDict[cleanKey] {
+            return mapped
+        }
+        
+        return scriptKey.lowercased().hasSuffix(".js") ? scriptKey : "\(scriptKey).js"
+    }
+    
+    /// Tự động nạp tất cả các file script helper khác (.js) có trong thư mục src
+    private func loadAllHelperScripts(context: JSContext, excludeScriptName: String) {
+        let extensionsDir = VBookExtensionManager.shared.extensionsDirectoryURL
+        let srcDir = extensionsDir.appendingPathComponent(self.extensionId).appendingPathComponent("src")
+        
+        guard let files = try? FileManager.default.contentsOfDirectory(at: srcDir, includingPropertiesForKeys: nil) else {
+            return
+        }
+        
+        for file in files {
+            if file.pathExtension.lowercased() == "js" {
+                let filename = file.lastPathComponent
+                // Bỏ qua config.js (đã load riêng) và file script nghiệp vụ chính (sẽ được evaluate sau)
+                if filename == "config.js" || filename == excludeScriptName {
+                    continue
+                }
+                
+                if let content = try? String(contentsOf: file, encoding: .utf8) {
+                    _ = context.evaluateScript(content)
+                }
+            }
+        }
+    }
+    
     /// Thực thi một tệp script nghiệp vụ và gọi hàm entrypoint execute(...)
     public func executeScript(
-        scriptName: String,
+        scriptName scriptKey: String,
         source: BookSource,
         arguments: [Any] = []
     ) async throws -> JSValue {
         let context = JSContext()!
         
-        // 1. Đăng ký các hàm và mở rộng toàn cục
+        // 1. Lấy tên file script thực tế tương ứng với nghiệp vụ từ plugin.json
+        let realScriptName = getRealScriptName(scriptKey: scriptKey)
+        
+        // 2. Đăng ký các hàm và mở rộng toàn cục
         setupGlobals(context: context)
         
-        // 2. Tiêm các cấu hình động của người dùng
+        // 3. Tiêm các cấu hình động của người dùng
         setupConfig(context: context, source: source)
         
-        // 3. Chạy config.js để khởi tạo BASE_URL đúng cách
+        // 4. Chạy config.js để khởi tạo BASE_URL đúng cách
         loadConfigFile(context: context)
         
-        // 4. Phân tích resolve và thực thi file script nghiệp vụ (gộp các file load để tránh lỗi scope let/const ES6)
-        guard let scriptContent = getFullScriptContent(scriptName: scriptName) else {
-            throw NSError(domain: "VBookExtensionEngine", code: 501, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file script \(scriptName)"])
+        // 5. Tự động nạp trước các file script phụ trợ khác (.js) trong src
+        loadAllHelperScripts(context: context, excludeScriptName: realScriptName)
+        
+        // 6. Phân tích resolve và thực thi file script nghiệp vụ chính (gộp các file load để tránh lỗi scope let/const ES6)
+        guard let scriptContent = getFullScriptContent(scriptName: realScriptName) else {
+            throw NSError(domain: "VBookExtensionEngine", code: 501, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file script \(realScriptName) cho nghiệp vụ \(scriptKey)"])
         }
         
         _ = context.evaluateScript(scriptContent)
         
-        // 5. Gọi hàm execute(...) trong script
+        // 7. Gọi hàm execute(...) trong script
         guard let executeFunc = context.objectForKeyedSubscript("execute"), !executeFunc.isUndefined, !executeFunc.isNull else {
-            throw NSError(domain: "VBookExtensionEngine", code: 502, userInfo: [NSLocalizedDescriptionKey: "Tệp script \(scriptName) không định nghĩa hàm execute()"])
+            throw NSError(domain: "VBookExtensionEngine", code: 502, userInfo: [NSLocalizedDescriptionKey: "Tệp script \(realScriptName) không định nghĩa hàm execute()"])
         }
         
         let jsResult = executeFunc.call(withArguments: arguments)
         
-        // 6. Xử lý lỗi trả về từ đối tượng Response.error
+        // 8. Xử lý lỗi trả về từ đối tượng Response.error
         if let resObj = jsResult, !resObj.isUndefined, !resObj.isNull {
             if let errorVal = resObj.objectForKeyedSubscript("error"), !errorVal.isUndefined, !errorVal.isNull {
                 throw NSError(domain: "VBookExtensionEngine", code: 503, userInfo: [NSLocalizedDescriptionKey: errorVal.toString() ?? "Lỗi không xác định từ Extension"])
