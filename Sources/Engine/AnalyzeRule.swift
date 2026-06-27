@@ -52,7 +52,7 @@ public final class AnalyzeRule {
     }
     
     /// Trích xuất danh sách các chuỗi từ quy tắc (Hỗ trợ ghép nối &&, ||, @js)
-    public func getStringList(_ rule: String?, from mContent: Any? = nil) -> [String] {
+    public func getStringList(_ rule: String?, from mContent: Any? = nil, isListRule: Bool = false) -> [String] {
         guard let rule = rule, !rule.isEmpty else { return [] }
         let evalContent = mContent ?? self.content
         guard let evalContent = evalContent else { return [] }
@@ -77,7 +77,7 @@ public final class AnalyzeRule {
         var results: [String] = []
         
         for subRule in subRules {
-            let subResult = evaluateSingleRule(subRule, on: evalContent)
+            let subResult = evaluateSingleRule(subRule, on: evalContent, isListRule: isListRule)
             results.append(contentsOf: subResult)
         }
         
@@ -86,7 +86,7 @@ public final class AnalyzeRule {
     
     // MARK: - EVALUATE SINGLE RULE
     
-    private func evaluateSingleRule(_ rule: String, on content: Any) -> [String] {
+    private func evaluateSingleRule(_ rule: String, on content: Any, isListRule: Bool) -> [String] {
         var currentRule = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         
         // Xử lý regex thay thế dạng "##regex##replace" ở cuối quy tắc
@@ -112,7 +112,7 @@ public final class AnalyzeRule {
         if isJson {
             results = evaluateJsonRule(currentRule, jsonStr: contentStr)
         } else {
-            results = evaluateHtmlRule(currentRule, htmlStr: contentStr)
+            results = evaluateHtmlRule(currentRule, htmlStr: contentStr, isListRule: isListRule)
         }
         
         // Áp dụng biểu thức chính quy thay thế nếu có
@@ -131,13 +131,15 @@ public final class AnalyzeRule {
     
     // MARK: - HTML RULE PARSER (SwiftSoup)
     
-    private func evaluateHtmlRule(_ rule: String, htmlStr: String) -> [String] {
+    private func evaluateHtmlRule(_ rule: String, htmlStr: String, isListRule: Bool) -> [String] {
         guard let doc = try? SwiftSoup.parse(htmlStr, baseUrl ?? "") else { return [htmlStr] }
         
         // Chia tách bằng @ để tìm thuộc tính cần lấy (VD: selector@text hoặc selector@href)
         let parts = rule.components(separatedBy: "@")
         let selector = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-        let attr = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : "text"
+        
+        let defaultAttr = isListRule ? "outerHtml" : "text"
+        let attr = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : defaultAttr
         
         // Nếu không có selector, lấy trực tiếp trên document root
         let elements: Elements
@@ -155,6 +157,10 @@ public final class AnalyzeRule {
                 }
             } else if attr == "html" {
                 if let html = try? element.html() {
+                    results.append(html)
+                }
+            } else if attr == "outerHtml" {
+                if let html = try? element.outerHtml() {
                     results.append(html)
                 }
             } else {

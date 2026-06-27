@@ -164,37 +164,46 @@ public struct ExploreView: View {
                             .background(Color.gray.opacity(0.05))
                         }
                         
-                        List(searchResults) { book in
-                            HStack {
-                                if let cover = book.coverUrl, let url = URL(string: cover) {
-                                    AsyncImage(url: url) { image in
-                                        image.resizable().aspectRatio(contentMode: .fit)
-                                    } placeholder: {
-                                        Color.gray
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(searchResults) { book in
+                                    HStack {
+                                        if let cover = book.coverUrl, let url = URL(string: cover) {
+                                            AsyncImage(url: url) { image in
+                                                image.resizable().aspectRatio(contentMode: .fit)
+                                            } placeholder: {
+                                                Color.gray
+                                                    .frame(width: 50, height: 70)
+                                            }
+                                            .frame(width: 50, height: 70)
+                                            .cornerRadius(4)
+                                        } else {
+                                            Color.gray.frame(width: 50, height: 70).cornerRadius(4)
+                                        }
+                                        
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text(book.name).font(.headline)
+                                            Text(book.author ?? "Không rõ tác giả").font(.subheadline).foregroundColor(.secondary)
+                                            if let intro = book.intro {
+                                                Text(intro).font(.caption).foregroundColor(.gray).lineLimit(2)
+                                            }
+                                        }
+                                        
+                                        Spacer()
+                                        Image(systemName: "chevron.right").foregroundColor(.gray)
                                     }
-                                    .frame(width: 50, height: 70)
-                                    .cornerRadius(4)
-                                } else {
-                                    Color.gray.frame(width: 50, height: 70).cornerRadius(4)
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 5) {
-                                    Text(book.name).font(.headline)
-                                    Text(book.author ?? "Không rõ tác giả").font(.subheadline).foregroundColor(.secondary)
-                                    if let intro = book.intro {
-                                        Text(intro).font(.caption).foregroundColor(.gray).lineLimit(2)
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 8)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        openBookDetail(book)
                                     }
+                                    
+                                    Divider()
+                                        .padding(.horizontal)
                                 }
-                                
-                                Spacer()
-                                Image(systemName: "chevron.right").foregroundColor(.gray)
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                openBookDetail(book)
                             }
                         }
-                        .listStyle(PlainListStyle())
                     }
                 }
             }
@@ -402,7 +411,8 @@ public struct ExploreView: View {
                 return
             }
             
-            let bookNodes = analyzer.getStringList(listRule)
+            let bookNodes = analyzer.getStringList(listRule, isListRule: true)
+            Logger.shared.log("[performExplore] URL: \(absoluteUrlStr), HTML length: \(html.count), listRule: \(listRule), nodes count: \(bookNodes.count)")
             var parsedBooks: [Book] = []
             
             for node in bookNodes {
@@ -427,13 +437,14 @@ public struct ExploreView: View {
                     origin: source.bookSourceUrl,
                     originName: source.bookSourceName
                 )
+                Logger.shared.log("[performExplore] Parsed book -> Name: \(name), Author: \(author), Cover: \(cover), URL: \(absoluteUrl)")
                 parsedBooks.append(book)
             }
             
             self.searchResults = parsedBooks
             isSearching = false
         } catch {
-            print("Explore Error: \(error)")
+            Logger.shared.log("Explore Error: \(error)")
             isSearching = false
         }
     }
@@ -449,7 +460,12 @@ public struct ExploreView: View {
         searchResults = []
         
         let source = sources[selectedSourceIndex]
-        let query = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? searchQuery
+        var query = searchQuery
+        if source.bookSourceUrl.contains("sudugu.org") || (source.bookSourceGroup ?? "").contains("Trung Quốc") {
+            query = searchQuery.addingPercentEncodingForGBK()
+        } else {
+            query = searchQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? searchQuery
+        }
         
         // Cấu hình URL tìm kiếm
         // Android dùng: searchUrl: "https://example.com/search?key={key}"
@@ -474,7 +490,8 @@ public struct ExploreView: View {
             let introRule = ruleSearch.intro ?? ""
             let urlRule = ruleSearch.bookUrl ?? ""
             
-            let bookNodes = analyzer.getStringList(listRule)
+            let bookNodes = analyzer.getStringList(listRule, isListRule: true)
+            Logger.shared.log("[performSearch] URL: \(searchUrlStr), HTML length: \(html.count), listRule: \(listRule), nodes count: \(bookNodes.count)")
             var parsedBooks: [Book] = []
             
             for node in bookNodes {
@@ -499,13 +516,14 @@ public struct ExploreView: View {
                     origin: source.bookSourceUrl,
                     originName: source.bookSourceName
                 )
+                Logger.shared.log("[performSearch] Parsed book -> Name: \(name), Author: \(author), Cover: \(cover), URL: \(absoluteUrl)")
                 parsedBooks.append(book)
             }
             
             self.searchResults = parsedBooks
             isSearching = false
         } catch {
-            print("Search Error: \(error)")
+            Logger.shared.log("Search Error: \(error)")
             isSearching = false
         }
     }
@@ -535,7 +553,7 @@ public struct ExploreView: View {
         let analyzeUrl = AnalyzeUrl(urlStr: requestUrl, source: source)
         
         guard let html = try? await NetworkManager.shared.request(analyzeUrl) else {
-            print("Failed to fetch book detail page for \(book.name)")
+            Logger.shared.log("Failed to fetch book detail page for \(book.name)")
             return
         }
         
@@ -543,6 +561,7 @@ public struct ExploreView: View {
         
         // Cập nhật các thông tin chi tiết từ ruleBookInfo
         var updatedBook = book
+        Logger.shared.log("[fetchBookDetails] Detail HTML length: \(html.count), updatedBook.name: \(updatedBook.name), author: \(updatedBook.author ?? "")")
         if let ruleBookInfo = source.ruleBookInfo {
             if let nameRule = ruleBookInfo.name, !nameRule.isEmpty {
                 let name = analyzer.getString(nameRule)
@@ -583,8 +602,8 @@ public struct ExploreView: View {
         let tocAnalyzeUrl = AnalyzeUrl(urlStr: tocUrl, source: source)
         if let tocHtml = try? await NetworkManager.shared.request(tocAnalyzeUrl) {
             let tocAnalyzer = AnalyzeRule(content: tocHtml, baseUrl: tocUrl, source: source)
-            let chapterListRule = source.ruleToc?.chapterList ?? ""
-            let chapterNodes = tocAnalyzer.getStringList(chapterListRule)
+            let chapterNodes = tocAnalyzer.getStringList(chapterListRule, isListRule: true)
+            Logger.shared.log("[fetchBookDetails] TOC HTML length: \(tocHtml.count), chapterListRule: \(chapterListRule), chapters count: \(chapterNodes.count)")
             
             // Lưu lại số lượng chương hiển thị trên UI
             self.detailChaptersCount = chapterNodes.count
@@ -606,7 +625,8 @@ public struct ExploreView: View {
             let chapterNameRule = source.ruleToc?.chapterName ?? ""
             let chapterUrlRule = source.ruleToc?.chapterUrl ?? ""
             
-            let chapterNodes = tocAnalyzer.getStringList(chapterListRule)
+            let chapterNodes = tocAnalyzer.getStringList(chapterListRule, isListRule: true)
+            Logger.shared.log("[addSelectedBookToShelf] TOC HTML length: \(tocHtml.count), chapterListRule: \(chapterListRule), chapters count: \(chapterNodes.count)")
             var parsedChapters: [BookChapter] = []
             
             for (i, node) in chapterNodes.enumerated() {
@@ -644,3 +664,16 @@ extension View {
     }
 }
 #endif
+
+extension String {
+    fileprivate func addingPercentEncodingForGBK() -> String {
+        let cfEncoding = CFStringConvertIANACharSetNameToEncoding("gbk" as CFString)
+        if cfEncoding != kCFStringEncodingInvalidId {
+            let nsEncoding = CFStringConvertEncodingToNSStringEncoding(cfEncoding)
+            if let data = self.data(using: String.Encoding(rawValue: nsEncoding)) {
+                return data.map { String(format: "%%%02X", $0) }.joined()
+            }
+        }
+        return self.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? self
+    }
+}
