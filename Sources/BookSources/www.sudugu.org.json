@@ -6,7 +6,7 @@
     "bookSourceGroup": "Trung Quốc",
     "customOrder": 0,
     "enabled": true,
-    "enabledExplore": false,
+    "enabledExplore": true,
     "enabledCookieJar": true,
     "header": "{\n  \"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"\n}",
     "bookSourceComment": "Nguồn sách được tạo tự động bởi Antigravity AI",
@@ -14,7 +14,17 @@
     "respondTime": 180000,
     "weight": 0,
     "searchUrl": "https://www.sudugu.org/i/sor.aspx?key={key}",
+    "exploreUrl": "玄幻小说::/xuanhuan/{page}.html\n仙侠小说::/xianxia/{page}.html\n都市小说::/dushi/{page}.html\n历史小说::/lishi/{page}.html\n军事小说::/junshi/{page}.html\n科幻小说::/kehuan/{page}.html\n言情小说::/yanqing/{page}.html",
     "ruleSearch": {
+      "bookList": ".item",
+      "name": "h3@text",
+      "author": "a.2@text",
+      "bookUrl": "a.1@href",
+      "coverUrl": "img@src",
+      "kind": "span.0@text",
+      "lastChapter": "a.3@text"
+    },
+    "ruleExplore": {
       "bookList": ".item",
       "name": "h3@text",
       "author": "a.2@text",

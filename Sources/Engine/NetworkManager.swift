@@ -38,7 +38,22 @@ public final class NetworkManager: NSObject, URLSessionDelegate, URLSessionTaskD
             await syncCookiesToWebView(for: requestURL)
         }
         
-        // Giải mã nội dung
+        // Xác định Encoding từ Response Header (hỗ trợ GBK, GB2312, Windows-1258...)
+        var usedEncoding: String.Encoding = .utf8
+        if let httpResponse = response as? HTTPURLResponse, let encodingName = httpResponse.textEncodingName {
+            let cfEncoding = CFStringConvertIANACharSetNameToEncoding(encodingName as CFString)
+            if cfEncoding != kCFStringEncodingInvalidId {
+                let nsEncoding = CFStringConvertEncodingToNSStringEncoding(cfEncoding)
+                usedEncoding = String.Encoding(rawValue: nsEncoding)
+            }
+        }
+        
+        // Giải mã nội dung bằng bảng mã đã xác định
+        if let htmlStr = String(data: data, encoding: usedEncoding) {
+            return htmlStr
+        }
+        
+        // Fallback dự phòng sang UTF-8 hoặc ASCII
         if let htmlStr = String(data: data, encoding: .utf8) {
             return htmlStr
         } else if let asciiStr = String(data: data, encoding: .ascii) {
