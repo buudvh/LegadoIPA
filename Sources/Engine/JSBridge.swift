@@ -146,7 +146,6 @@ import SwiftSoup
             }
         }
     }
-    }
 }
 
 // MARK: - Response Wrapper cho JS (startBrowserAwait / ajax)
