@@ -329,24 +329,63 @@ public struct ExploreView: View {
         
         guard let exploreUrlStr = source.exploreUrl, !exploreUrlStr.isEmpty else { return }
         
-        // Dịch exploreUrl sang tiếng Việt
-        let translatedRaw = await TranslateUtils.translateSortExploreUrl(exploreUrlStr) ?? exploreUrlStr
+        var categoryList: [(name: String, url: String)] = []
+        let trimmedExplore = exploreUrlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         
-        let lines = translatedRaw.components(separatedBy: .newlines)
-        var categories: [(name: String, url: String)] = []
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-            if trimmed.contains("::") {
-                let parts = trimmed.components(separatedBy: "::")
-                if parts.count >= 2 {
-                    let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-                    let url = parts[1...].joined(separator: "::").trimmingCharacters(in: .whitespacesAndNewlines)
-                    categories.append((name: name, url: url))
+        if trimmedExplore.hasPrefix("@js:") || trimmedExplore.hasPrefix("<js>") {
+            // Chạy kịch bản JS để trích xuất thể loại khám phá động
+            var jsCode = trimmedExplore
+            if jsCode.hasPrefix("@js:") {
+                jsCode = String(jsCode.dropFirst(4))
+            } else if jsCode.hasPrefix("<js>") && jsCode.hasSuffix("</js>") {
+                jsCode = String(jsCode.dropFirst(4).dropLast(5))
+            }
+            
+            let analyzer = AnalyzeRule(content: "", baseUrl: source.bookSourceUrl, source: source)
+            let resultStr = analyzer.getString("@js:" + jsCode)
+            
+            // Parse danh sách JSON trả về dạng [{"title":"...", "url":"..."}]
+            if let jsonData = resultStr.data(using: .utf8),
+               let jsonArray = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+                for item in jsonArray {
+                    let name = (item["title"] as? String) ?? (item["name"] as? String) ?? ""
+                    let url = (item["url"] as? String) ?? ""
+                    if !name.isEmpty && !url.isEmpty {
+                        categoryList.append((name: name, url: url))
+                    }
+                }
+            }
+        } else if trimmedExplore.hasPrefix("[") && trimmedExplore.hasSuffix("]") {
+            // Giải mã trực tiếp JSON Array tĩnh chứa danh mục
+            if let jsonData = trimmedExplore.data(using: .utf8),
+               let jsonArray = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+                for item in jsonArray {
+                    let name = (item["title"] as? String) ?? (item["name"] as? String) ?? ""
+                    let url = (item["url"] as? String) ?? ""
+                    if !name.isEmpty && !url.isEmpty {
+                        categoryList.append((name: name, url: url))
+                    }
+                }
+            }
+        } else {
+            // Quy trình cũ: Phân tích Tên::URL theo từng dòng tĩnh
+            let translatedRaw = await TranslateUtils.translateSortExploreUrl(exploreUrlStr) ?? exploreUrlStr
+            let lines = translatedRaw.components(separatedBy: .newlines)
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                if trimmed.contains("::") {
+                    let parts = trimmed.components(separatedBy: "::")
+                    if parts.count >= 2 {
+                        let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                        let url = parts[1...].joined(separator: "::").trimmingCharacters(in: .whitespacesAndNewlines)
+                        categoryList.append((name: name, url: url))
+                    }
                 }
             }
         }
-        self.exploreCategories = categories
+        
+        self.exploreCategories = categoryList
     }
     
     private func performExplore(categoryUrl: String, page: Int) async {

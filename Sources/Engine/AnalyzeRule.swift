@@ -106,7 +106,7 @@ public final class AnalyzeRule {
         return list.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    /// Trích xuất danh sách các chuỗi từ quy tắc (Hỗ trợ ghép nối &&, ||, @js)
+    /// Trích xuất danh sách các chuỗi từ quy tắc (Hỗ trợ ghép nối &&, ||, @js, và quy tắc chain nhiều dòng)
     public func getStringList(_ rule: String?, from mContent: Any? = nil, isListRule: Bool = false) -> [String] {
         guard let rule = rule, !rule.isEmpty else { return [] }
         
@@ -142,11 +142,73 @@ public final class AnalyzeRule {
         var results: [String] = []
         
         for subRule in subRules {
-            let subResult = evaluateSingleRule(subRule, on: evalContent, isListRule: isListRule)
+            let subResult = evaluateChainRules(subRule, on: evalContent, isListRule: isListRule)
             results.append(contentsOf: subResult)
         }
         
         return results
+    }
+    
+    private func splitChainRules(_ rule: String) -> [String] {
+        // Hỗ trợ kí tự % làm kí tự phân tách chain
+        if rule.contains("%") {
+            return rule.components(separatedBy: "%").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        }
+        
+        var parts: [String] = []
+        var current = ""
+        let lines = rule.components(separatedBy: .newlines)
+        var inJsBlock = false
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Phát hiện bắt đầu khối JS
+            if trimmed.contains("<js>") || trimmed.hasPrefix("@js:") {
+                inJsBlock = true
+            }
+            
+            if current.isEmpty {
+                current = line
+            } else {
+                if inJsBlock {
+                    current += "\n" + line
+                } else {
+                    parts.append(current)
+                    current = line
+                }
+            }
+            
+            if trimmed.contains("</js>") {
+                inJsBlock = false
+            }
+        }
+        if !current.isEmpty {
+            parts.append(current)
+        }
+        return parts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+    
+    private func evaluateChainRules(_ rule: String, on content: Any, isListRule: Bool) -> [String] {
+        let subRules = splitChainRules(rule)
+        if subRules.isEmpty { return [] }
+        
+        var currentInputs: [Any] = [content]
+        
+        for (index, subRule) in subRules.enumerated() {
+            var nextInputs: [Any] = []
+            let isLast = (index == subRules.count - 1)
+            
+            for input in currentInputs {
+                // Chỉ áp dụng isListRule cho subRule cuối cùng để tránh phân rã mảng quá sớm
+                let res = evaluateSingleRule(subRule, on: input, isListRule: isListRule && isLast)
+                nextInputs.append(contentsOf: res)
+            }
+            currentInputs = nextInputs
+            if currentInputs.isEmpty { break }
+        }
+        
+        return currentInputs.map { String(describing: $0) }
     }
     
     // MARK: - EVALUATE SINGLE RULE
@@ -171,8 +233,31 @@ public final class AnalyzeRule {
         var results: [String] = []
         
         // Phân loại định dạng nội dung (HTML vs JSON) và bộ lọc (XPath vs Jsoup vs JSONPath)
-        let contentStr = String(describing: content)
-        let isJson = contentStr.hasPrefix("{") || contentStr.hasPrefix("[")
+        var isJson = false
+        var contentStr = ""
+        
+        if let dict = content as? [String: Any] {
+            isJson = true
+            if let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+               let str = String(data: data, encoding: .utf8) {
+                contentStr = str
+            } else {
+                contentStr = String(describing: content)
+            }
+        } else if let array = content as? [Any] {
+            isJson = true
+            if let data = try? JSONSerialization.data(withJSONObject: array, options: []),
+               let str = String(data: data, encoding: .utf8) {
+                contentStr = str
+            } else {
+                contentStr = String(describing: content)
+            }
+        } else {
+            let tempStr = String(describing: content).trimmingCharacters(in: .whitespacesAndNewlines)
+            isJson = tempStr.hasPrefix("{") || tempStr.hasPrefix("[")
+            contentStr = tempStr
+        }
+        
         let isXPathRule = currentRule.hasPrefix("/") || currentRule.lowercased().hasPrefix("@xpath:")
         
         if isJson {
@@ -293,24 +378,46 @@ public final class AnalyzeRule {
             jsonPath = String(jsonPath.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         
-        let escapedJson = jsonStr.jsonEscaped()
-        let jsExpression = """
-        (function() {
-            var _jsonObj = JSON.parse(\(escapedJson));
-            var res = customJsonPath(_jsonObj, "\(jsonPath)");
-            return res;
-        })()
-        """
-        
         lock.lock()
         defer { lock.unlock() }
         
+        // Sử dụng JSValue(newJSONString:in:) để tránh lỗi escape chuỗi
+        guard let jsonObj = JSValue(newJSONString: jsonStr, in: jsContext) else { return [] }
+        jsContext.setObject(jsonObj, forKeyedSubscript: "_jsonObj" as NSString)
+        
+        // Xóa exception cũ của JSContext trước khi evaluate
+        jsContext.exception = nil
+        
+        let jsExpression = "customJsonPath(_jsonObj, \"\(jsonPath)\")"
         let jsVal = jsContext.evaluateScript(jsExpression)
+        
+        // Giải phóng tham chiếu
+        jsContext.setObject(nil, forKeyedSubscript: "_jsonObj" as NSString)
+        
+        // In log nếu có lỗi chạy script JSONPath
+        if let exception = jsContext.exception, !exception.isUndefined && !exception.isNull {
+            print("[JSONPath JS Error]: \(exception.toString() ?? "")")
+            jsContext.exception = nil
+            return []
+        }
+        
         guard let val = jsVal else { return [] }
         
         if val.isArray {
             if let array = val.toArray() {
-                return array.map { String(describing: $0) }
+                return array.map { item -> String in
+                    if let dict = item as? [String: Any],
+                       let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+                       let str = String(data: data, encoding: .utf8) {
+                        return str
+                    }
+                    if let arr = item as? [Any],
+                       let data = try? JSONSerialization.data(withJSONObject: arr, options: []),
+                       let str = String(data: data, encoding: .utf8) {
+                        return str
+                    }
+                    return String(describing: item)
+                }
             }
         }
         

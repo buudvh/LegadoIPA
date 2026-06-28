@@ -143,7 +143,16 @@ public final class AnalyzeUrl {
             
             let jsCode = String(result[codeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
             
-            if let jsVal = jsContext.evaluateScript(jsCode) {
+            // Xóa lỗi exception cũ của JSContext trước khi evaluate
+            jsContext.exception = nil
+            
+            let jsVal = jsContext.evaluateScript(jsCode)
+            
+            if let exception = jsContext.exception, !exception.isUndefined && !exception.isNull {
+                print("[AnalyzeUrl JS Error] Lỗi biên dịch URL JS: \(exception.toString() ?? "")")
+                jsContext.exception = nil
+                result.replaceSubrange(totalRange, with: "")
+            } else if let jsVal = jsVal {
                 let replacement = jsVal.isUndefined || jsVal.isNull ? "" : jsVal.toString() ?? ""
                 result.replaceSubrange(totalRange, with: replacement)
             } else {
