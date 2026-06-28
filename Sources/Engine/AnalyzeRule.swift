@@ -48,17 +48,41 @@ public final class AnalyzeRule {
     
     // MARK: - Variables Storage (@put / @get)
     
+    private static var globalVariables: [String: String] = [:]
+    private static let globalLock = NSRecursiveLock()
+    
+    public static func putGlobalVariable(key: String, value: String) {
+        globalLock.lock()
+        defer { globalLock.unlock() }
+        globalVariables[key] = value
+    }
+    
+    public static func getGlobalVariable(_ key: String) -> String {
+        globalLock.lock()
+        defer { globalLock.unlock() }
+        return globalVariables[key] ?? ""
+    }
+    
+    public static func clearGlobalVariables() {
+        globalLock.lock()
+        defer { globalLock.unlock() }
+        globalVariables.removeAll()
+    }
+    
     public func putVariable(key: String, value: String) {
         lock.lock()
         defer { lock.unlock() }
         ruleData[key] = value
         _jsContext?.setObject(value, forKeyedSubscript: key as NSString)
+        AnalyzeRule.putGlobalVariable(key: key, value: value)
     }
     
     public func getVariable(key: String) -> String {
         lock.lock()
         defer { lock.unlock() }
-        return String(describing: ruleData[key] ?? "")
+        let localVal = String(describing: ruleData[key] ?? "")
+        if !localVal.isEmpty { return localVal }
+        return AnalyzeRule.getGlobalVariable(key)
     }
     
     // MARK: - GET STRING
@@ -332,7 +356,7 @@ public final class AnalyzeRule {
                 continue
             }
             let key = String(result[keyRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-            let val = getVariable(key)
+            let val = getVariable(key: key)
             result.replaceSubrange(totalRange, with: val)
         }
         return result

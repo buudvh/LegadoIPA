@@ -171,21 +171,27 @@ public final class WebViewPool {
             forName: UIApplication.didReceiveMemoryWarningNotification,
             object: nil,
             queue: .main
-        ) { @MainActor [weak self] _ in
+        ) { [weak self] _ in
             guard let self = self else { return }
-            
-            // Hủy triệt để các WebView rảnh rỗi
-            for webView in self.idlePool {
-                webView.destroy()
+            Task { @MainActor in
+                self.handleMemoryWarning()
             }
-            self.idlePool.removeAll()
-            
-            // Dọn dẹp cache WebKit trên disk và memory để giải phóng RAM tối đa
-            WKWebsiteDataStore.default().removeData(
-                ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
-                modifiedSince: Date.distantPast
-            ) {}
         }
+    }
+    
+    @MainActor
+    private func handleMemoryWarning() {
+        // Hủy triệt để các WebView rảnh rỗi
+        for webView in self.idlePool {
+            webView.destroy()
+        }
+        self.idlePool.removeAll()
+        
+        // Dọn dẹp cache WebKit trên disk và memory để giải phóng RAM tối đa
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
+            modifiedSince: Date.distantPast
+        ) {}
     }
     
     /// Lấy một WebView rảnh rỗi hoặc khởi tạo mới

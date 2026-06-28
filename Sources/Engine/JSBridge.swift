@@ -265,10 +265,10 @@ public final class JSBridge {
         
         // 9.2 Đăng ký bổ sung các hàm java.put/get/md5/base64/cookie cho đối tượng java
         let putBlock: @convention(block) (String, String) -> Void = { key, val in
-            AnalyzeRule.putVariable(key: key, value: val)
+            AnalyzeRule.putGlobalVariable(key: key, value: val)
         }
         let getBlock: @convention(block) (String) -> String = { key in
-            return AnalyzeRule.getVariable(key)
+            return AnalyzeRule.getGlobalVariable(key)
         }
         javaObject?.setObject(putBlock, forKeyedSubscript: "put" as NSString)
         javaObject?.setObject(getBlock, forKeyedSubscript: "get" as NSString)

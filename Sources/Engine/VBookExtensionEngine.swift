@@ -1,3 +1,4 @@
+#if false
 import Foundation
 import JavaScriptCore
 import SwiftSoup
@@ -378,3 +379,4 @@ public final class VBookExtensionEngine {
         return jsResult ?? JSValue(undefinedIn: context)
     }
 }
+#endif
