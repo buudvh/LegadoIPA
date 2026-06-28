@@ -224,6 +224,24 @@ public struct ExploreView: View {
                 Task {
                     if newValue < sources.count {
                         await parseExploreUrl(from: sources[newValue])
+                        
+                        // Tự động chọn thể loại đầu tiên và tải danh sách mới
+                        if !self.exploreCategories.isEmpty {
+                            self.selectedCategoryIndex = 0
+                            self.currentPage = 1
+                            self.isExploringMode = true
+                            let targetUrl = self.exploreCategories[0].url
+                            await performExplore(categoryUrl: targetUrl, page: 1)
+                        } else {
+                            self.selectedCategoryIndex = nil
+                            self.isExploringMode = false
+                            self.searchResults = []
+                            
+                            // Nếu đang tìm kiếm dở dang, tự động tìm kiếm lại theo nguồn mới
+                            if !self.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                await performSearch()
+                            }
+                        }
                     }
                 }
             }
@@ -319,6 +337,15 @@ public struct ExploreView: View {
         self.sources = list.filter { $0.enabled }
         if !self.sources.isEmpty {
             await parseExploreUrl(from: self.sources[selectedSourceIndex])
+            
+            // Tự động chọn thể loại đầu tiên khi load màn hình lần đầu
+            if !self.exploreCategories.isEmpty {
+                self.selectedCategoryIndex = 0
+                self.currentPage = 1
+                self.isExploringMode = true
+                let targetUrl = self.exploreCategories[0].url
+                await performExplore(categoryUrl: targetUrl, page: 1)
+            }
         }
     }
     
@@ -573,9 +600,11 @@ public struct ExploreView: View {
         detailChaptersCount = 0
         showDetailSheet = true
         
-        Task {
-            // Tải chi tiết và đếm chương trước
-            await fetchBookDetails(book)
+        // Trì hoãn việc fetch thông tin chi tiết một chút để SwiftUI hoàn tất hiệu ứng hiển thị Sheet mượt mà
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            Task {
+                await fetchBookDetails(book)
+            }
         }
     }
     

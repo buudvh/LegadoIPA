@@ -89,24 +89,71 @@ public final class AnalyzeUrl {
             if let body = options["body"] as? String {
                 let evaluatedBody = evaluateJSTemplates(in: body)
                 request.httpBody = evaluatedBody.data(using: .utf8)
-            } else if let bodyDict = options["body"] as? [String: Any] {
-                // Hỗ trợ body dạng form-data / x-www-form-urlencoded
-                var parts: [String] = []
-                for (key, val) in bodyDict {
-                    let valStr = evaluateJSTemplates(in: String(describing: val))
-                    if let encKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                       let encVal = valStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-                        parts.append("\(encKey)=\(encVal)")
+            } else if let bodyObj = options["body"] {
+                var isJsonBody = false
+                if let headers = options["headers"] as? [String: String] {
+                    for (k, v) in headers {
+                        if k.lowercased() == "content-type" && v.lowercased().contains("application/json") {
+                            isJsonBody = true
+                            break
+                        }
                     }
                 }
-                request.httpBody = parts.joined(separator: "&").data(using: .utf8)
-                if request.value(forHTTPHeaderField: "Content-Type") == nil {
-                    request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                
+                if !isJsonBody {
+                    if let dict = bodyObj as? [String: Any] {
+                        for (_, val) in dict {
+                            if val is [String: Any] || val is [Any] {
+                                isJsonBody = true
+                                break
+                            }
+                        }
+                    } else if bodyObj is [Any] {
+                        isJsonBody = true
+                    }
+                }
+                
+                if isJsonBody {
+                    let evaluatedObj = evaluateJSTemplatesInObject(bodyObj)
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: evaluatedObj, options: []) {
+                        request.httpBody = jsonData
+                        if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                            request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+                        }
+                    }
+                } else if let bodyDict = bodyObj as? [String: Any] {
+                    var parts: [String] = []
+                    for (key, val) in bodyDict {
+                        let valStr = evaluateJSTemplates(in: String(describing: val))
+                        if let encKey = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                           let encVal = valStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+                            parts.append("\(encKey)=\(encVal)")
+                        }
+                    }
+                    request.httpBody = parts.joined(separator: "&").data(using: .utf8)
+                    if request.value(forHTTPHeaderField: "Content-Type") == nil {
+                        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                    }
                 }
             }
         }
         
         return request
+    }
+    
+    private func evaluateJSTemplatesInObject(_ obj: Any) -> Any {
+        if let str = obj as? String {
+            return evaluateJSTemplates(in: str)
+        } else if let dict = obj as? [String: Any] {
+            var newDict: [String: Any] = [:]
+            for (key, val) in dict {
+                newDict[key] = evaluateJSTemplatesInObject(val)
+            }
+            return newDict
+        } else if let array = obj as? [Any] {
+            return array.map { evaluateJSTemplatesInObject($0) }
+        }
+        return obj
     }
     
     // MARK: - JS Template Evaluator

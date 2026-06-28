@@ -232,40 +232,46 @@ public final class AnalyzeRule {
         
         var results: [String] = []
         
-        // Phân loại định dạng nội dung (HTML vs JSON) và bộ lọc (XPath vs Jsoup vs JSONPath)
-        var isJson = false
-        var contentStr = ""
-        
-        if let dict = content as? [String: Any] {
-            isJson = true
-            if let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
-               let str = String(data: data, encoding: .utf8) {
-                contentStr = str
-            } else {
-                contentStr = String(describing: content)
-            }
-        } else if let array = content as? [Any] {
-            isJson = true
-            if let data = try? JSONSerialization.data(withJSONObject: array, options: []),
-               let str = String(data: data, encoding: .utf8) {
-                contentStr = str
-            } else {
-                contentStr = String(describing: content)
-            }
+        // 0. Nếu quy tắc chứa các thẻ mẫu nội suy {{...}}
+        if currentRule.contains("{{") && currentRule.contains("}}") {
+            let templated = evaluateTemplateRule(currentRule, on: content)
+            results = [templated]
         } else {
-            let tempStr = String(describing: content).trimmingCharacters(in: .whitespacesAndNewlines)
-            isJson = tempStr.hasPrefix("{") || tempStr.hasPrefix("[")
-            contentStr = tempStr
-        }
-        
-        let isXPathRule = currentRule.hasPrefix("/") || currentRule.lowercased().hasPrefix("@xpath:")
-        
-        if isJson {
-            results = evaluateJsonRule(currentRule, jsonStr: contentStr)
-        } else if isXPathRule {
-            results = evaluateXPathRule(currentRule, htmlStr: contentStr)
-        } else {
-            results = evaluateHtmlRule(currentRule, htmlStr: contentStr, isListRule: isListRule)
+            // Phân loại định dạng nội dung (HTML vs JSON) và bộ lọc (XPath vs Jsoup vs JSONPath)
+            var isJson = false
+            var contentStr = ""
+            
+            if let dict = content as? [String: Any] {
+                isJson = true
+                if let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+                   let str = String(data: data, encoding: .utf8) {
+                    contentStr = str
+                } else {
+                    contentStr = String(describing: content)
+                }
+            } else if let array = content as? [Any] {
+                isJson = true
+                if let data = try? JSONSerialization.data(withJSONObject: array, options: []),
+                   let str = String(data: data, encoding: .utf8) {
+                    contentStr = str
+                } else {
+                    contentStr = String(describing: content)
+                }
+            } else {
+                let tempStr = String(describing: content).trimmingCharacters(in: .whitespacesAndNewlines)
+                isJson = tempStr.hasPrefix("{") || tempStr.hasPrefix("[")
+                contentStr = tempStr
+            }
+            
+            let isXPathRule = currentRule.hasPrefix("/") || currentRule.lowercased().hasPrefix("@xpath:")
+            
+            if isJson {
+                results = evaluateJsonRule(currentRule, jsonStr: contentStr)
+            } else if isXPathRule {
+                results = evaluateXPathRule(currentRule, htmlStr: contentStr)
+            } else {
+                results = evaluateHtmlRule(currentRule, htmlStr: contentStr, isListRule: isListRule)
+            }
         }
         
         // Áp dụng biểu thức chính quy thay thế nếu có
@@ -381,10 +387,16 @@ public final class AnalyzeRule {
         lock.lock()
         defer { lock.unlock() }
         
+        // Làm sạch chuỗi JSON để loại bỏ BOM và khoảng trắng rác
+        var cleanJson = jsonStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanJson.hasPrefix("\u{FEFF}") {
+            cleanJson = String(cleanJson.dropFirst())
+        }
+        
         // Sử dụng JSON.parse của JSContext để giải mã JSON an toàn không lo lỗi escape chuỗi
         guard let jsonModule = jsContext.objectForKeyedSubscript("JSON"),
               let parseFunc = jsonModule.objectForKeyedSubscript("parse"),
-              let jsonObj = parseFunc.call(withArguments: [jsonStr]),
+              let jsonObj = parseFunc.call(withArguments: [cleanJson]),
               !jsonObj.isUndefined, !jsonObj.isNull else {
             return []
         }
@@ -450,6 +462,92 @@ public final class AnalyzeRule {
         
         let valStr = val.isUndefined || val.isNull ? "" : val.toString() ?? ""
         return valStr.isEmpty ? [] : [valStr]
+    }
+    
+    // MARK: - Template Rules Parser ({{...}})
+    
+    private func evaluateTemplateExpression(_ expr: String, on content: Any) -> String {
+        let trimmed = expr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        
+        // 1. Nếu là JSONPath
+        if trimmed.hasPrefix("$") {
+            var jsonStr = ""
+            if let dict = content as? [String: Any] {
+                if let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+                   let str = String(data: data, encoding: .utf8) {
+                    jsonStr = str
+                } else {
+                    jsonStr = String(describing: content)
+                }
+            } else if let array = content as? [Any] {
+                if let data = try? JSONSerialization.data(withJSONObject: array, options: []),
+                   let str = String(data: data, encoding: .utf8) {
+                    jsonStr = str
+                } else {
+                    jsonStr = String(describing: content)
+                }
+            } else {
+                jsonStr = String(describing: content)
+            }
+            let results = evaluateJsonRule(trimmed, jsonStr: jsonStr)
+            return results.joined(separator: " ")
+        }
+        
+        // 2. Nếu là CSS Selector
+        if trimmed.hasPrefix("@css:") || trimmed.hasPrefix("@@") {
+            let results = evaluateHtmlRule(trimmed, htmlStr: String(describing: content), isListRule: false)
+            return results.joined(separator: " ")
+        }
+        
+        // 3. Nếu là JS kịch bản
+        lock.lock()
+        jsContext.setObject(content, forKeyedSubscript: "result" as NSString)
+        jsContext.setObject(content, forKeyedSubscript: "src" as NSString)
+        if let baseUrl = self.baseUrl {
+            jsContext.setObject(baseUrl, forKeyedSubscript: "baseUrl" as NSString)
+        }
+        lock.unlock()
+        
+        // Xóa exception cũ trước khi chạy
+        jsContext.exception = nil
+        let jsVal = jsContext.evaluateScript(trimmed)
+        
+        if let exception = jsContext.exception, !exception.isUndefined && !exception.isNull {
+            print("[TemplateExpr JS Error]: \(exception.toString() ?? "")")
+            jsContext.exception = nil
+            return ""
+        }
+        
+        let resStr = jsVal?.isUndefined == false && jsVal?.isNull == false ? jsVal?.toString() ?? "" : ""
+        return resStr
+    }
+    
+    private func evaluateTemplateRule(_ rule: String, on content: Any) -> String {
+        let pattern = "\\{\\{([\\s\\S]*?)\\}\\}"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return rule }
+        
+        var resultStr = rule
+        let nsRange = NSRange(resultStr.startIndex..<resultStr.endIndex, in: resultStr)
+        let matches = regex.matches(in: resultStr, options: [], range: nsRange)
+        
+        for match in matches.reversed() {
+            guard let totalRange = Range(match.range(at: 0), in: resultStr),
+                  let codeRange = Range(match.range(at: 1), in: resultStr) else {
+                continue
+            }
+            let expr = String(resultStr[codeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let replacement = evaluateTemplateExpression(expr, on: content)
+            resultStr.replaceSubrange(totalRange, with: replacement)
+        }
+        
+        // Giải phóng tham chiếu
+        lock.lock()
+        jsContext.setObject(nil, forKeyedSubscript: "result" as NSString)
+        jsContext.setObject(nil, forKeyedSubscript: "src" as NSString)
+        lock.unlock()
+        
+        return resultStr
     }
     
     // MARK: - Get/Put Rules Helpers
