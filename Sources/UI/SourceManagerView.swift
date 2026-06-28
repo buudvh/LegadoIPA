@@ -8,8 +8,7 @@ public struct SourceManagerView: View {
     
     // Import Sheet
     @State private var showImportSheet = false
-    @State private var importMethod = 0 // 0: Dán JSON, 1: Nhập từ URL, 2: Chọn tệp JSON
-    @State private var importJsonText = ""
+    @State private var importMethod = 0 // 0: Nhập từ URL, 1: Chọn tệp JSON
     @State private var importUrlText = ""
     @State private var showDocumentPicker = false
     @State private var importMessage = ""
@@ -78,47 +77,14 @@ public struct SourceManagerView: View {
         NavigationView {
             VStack(spacing: 15) {
                 Picker("Phương thức nhập", selection: $importMethod) {
-                    Text("Dán JSON").tag(0)
-                    Text("Nhập từ URL").tag(1)
-                    Text("Chọn tệp").tag(2)
+                    Text("Nhập từ URL").tag(0)
+                    Text("Chọn tệp").tag(1)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 .padding(.top, 10)
                 
                 if importMethod == 0 {
-                    // Dán JSON
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Dán mã nguồn JSON Legado (hỗ trợ dạng mảng hoặc đối tượng đơn lẻ):")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal)
-                        
-                        TextEditor(text: $importJsonText)
-                            .border(Color.gray.opacity(0.3), width: 1)
-                            .cornerRadius(8)
-                            .padding(.horizontal)
-                            .frame(height: 250)
-                        
-                        Button(action: {
-                            Task { await performImport() }
-                        }) {
-                            if isImporting {
-                                ProgressView().progressViewStyle(CircularProgressViewStyle())
-                            } else {
-                                Text("Nhập nguồn sách")
-                                    .bold()
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.blue)
-                                    .foregroundColor(.white)
-                                    .cornerRadius(12)
-                                    .padding(.horizontal)
-                            }
-                        }
-                        .disabled(importJsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isImporting)
-                    }
-                } else if importMethod == 1 {
                     // Nhập từ URL
                     VStack(alignment: .leading, spacing: 15) {
                         Text("Nhập liên kết (URL) chứa tệp JSON nguồn sách:")
@@ -126,12 +92,29 @@ public struct SourceManagerView: View {
                             .foregroundColor(.secondary)
                             .padding(.horizontal)
                         
-                        TextField("https://example.com/sources.json", text: $importUrlText)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .padding(.horizontal)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                            .keyboardType(.URL)
+                        HStack {
+                            TextField("https://example.com/sources.json", text: $importUrlText)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .autocapitalization(.none)
+                                .disableAutocorrection(true)
+                                .keyboardType(.URL)
+                            
+                            Button(action: {
+                                if let clipboardString = UIPasteboard.general.string {
+                                    self.importUrlText = clipboardString.trimmingCharacters(in: .whitespacesAndNewlines)
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.on.clipboard")
+                                    Text("Dán")
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(Color.secondary.opacity(0.15))
+                                .cornerRadius(8)
+                            }
+                        }
+                        .padding(.horizontal)
                         
                         Button(action: {
                             Task { await importFromUrl() }
@@ -234,21 +217,7 @@ public struct SourceManagerView: View {
         }
     }
     
-    private func performImport() async {
-        let jsonStr = importJsonText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !jsonStr.isEmpty else { return }
-        
-        isImporting = true
-        importMessage = ""
-        
-        guard let jsonData = jsonStr.data(using: .utf8) else {
-            importMessage = "Mã hóa UTF-8 không hợp lệ"
-            isImporting = false
-            return
-        }
-        
-        await parseAndSaveSources(data: jsonData)
-    }
+
     
     private func importFromFile(url: URL) async {
         isImporting = true
@@ -312,7 +281,6 @@ public struct SourceManagerView: View {
             }
             
             importMessage = "Thành công: Đã nhập \(importedList.count) nguồn sách!"
-            importJsonText = ""
             importUrlText = ""
             isImporting = false
             

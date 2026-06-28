@@ -27,7 +27,7 @@ jobs:
       run: |
         xcodebuild -resolvePackageDependencies -project LegadoIPA.xcodeproj -scheme LegadoIPA
 
-    - name: Build App (Unsigned)
+    - name: Build App
       run: |
         xcodebuild build \
           -project LegadoIPA.xcodeproj \
