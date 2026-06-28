@@ -55,15 +55,9 @@ public struct SourceManagerView: View {
             .navigationTitle("Nguồn Sách")
             .navigationBarItems(
                 leading: EditButton(),
-                trailing: HStack(spacing: 20) {
-                    NavigationLink(destination: ExtensionStoreView()) {
-                        Image(systemName: "puzzlepiece.extension")
-                            .font(.title2)
-                    }
-                    Button(action: { showImportSheet = true }) {
-                        Image(systemName: "plus")
-                            .font(.title2)
-                    }
+                trailing: Button(action: { showImportSheet = true }) {
+                    Image(systemName: "plus")
+                        .font(.title2)
                 }
             )
             .onAppear {
