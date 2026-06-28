@@ -381,8 +381,13 @@ public final class AnalyzeRule {
         lock.lock()
         defer { lock.unlock() }
         
-        // Sử dụng JSValue(newJSONObjectFromJSONString:in:) để tránh lỗi escape chuỗi
-        guard let jsonObj = JSValue(newJSONObjectFromJSONString: jsonStr, in: jsContext) else { return [] }
+        // Sử dụng JSON.parse của JSContext để giải mã JSON an toàn không lo lỗi escape chuỗi
+        guard let jsonModule = jsContext.objectForKeyedSubscript("JSON"),
+              let parseFunc = jsonModule.objectForKeyedSubscript("parse"),
+              let jsonObj = parseFunc.call(withArguments: [jsonStr]),
+              !jsonObj.isUndefined, !jsonObj.isNull else {
+            return []
+        }
         jsContext.setObject(jsonObj, forKeyedSubscript: "_jsonObj" as NSString)
         
         // Xóa exception cũ của JSContext trước khi evaluate
