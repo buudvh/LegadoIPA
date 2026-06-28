@@ -1,6 +1,7 @@
 import Foundation
 import JavaScriptCore
 import SwiftSoup
+import Kanna
 
 /// Phân tích và trích xuất dữ liệu từ HTML/JSON dựa trên các quy tắc cấu hình (CSS Selector, XPath, JSONPath, JS, Regex)
 public final class AnalyzeRule {
@@ -16,17 +17,19 @@ public final class AnalyzeRule {
     // JS context dùng chung để chạy các quy tắc JS
     private var jsContext: JSContext {
         lock.lock()
-        defer { lock.unlock() }
-        if let context = _jsContext { return context }
-        guard let context = JSContext() else {
-            fatalError("Failed to create JSContext")
+        var context = _jsContext
+        if context == nil {
+            context = JSContext()
+            if let context = context {
+                JSBridge.setupContext(context, withBaseUrl: baseUrl, source: source)
+                for (key, val) in ruleData {
+                    context.setObject(val, forKeyedSubscript: key as NSString)
+                }
+                _jsContext = context
+            }
         }
-        JSBridge.setupContext(context, withBaseUrl: baseUrl, source: source)
-        for (key, val) in ruleData {
-            context.setObject(val, forKeyedSubscript: key as NSString)
-        }
-        _jsContext = context
-        return context
+        lock.unlock()
+        return context!
     }
     
     public init(content: Any? = nil, baseUrl: String? = nil, source: BookSource? = nil, ruleData: [String: Any] = [:]) {
@@ -43,21 +46,59 @@ public final class AnalyzeRule {
         }
     }
     
+    // MARK: - Variables Storage (@put / @get)
+    
+    public func putVariable(key: String, value: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        ruleData[key] = value
+        _jsContext?.setObject(value, forKeyedSubscript: key as NSString)
+    }
+    
+    public func getVariable(key: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(describing: ruleData[key] ?? "")
+    }
+    
     // MARK: - GET STRING
     
     /// Trích xuất một chuỗi đơn lẻ từ quy tắc
     public func getString(_ rule: String?, from mContent: Any? = nil) -> String {
-        let list = getStringList(rule, from: mContent)
+        guard let rule = rule, !rule.isEmpty else { return "" }
+        
+        // 1. Xử lý @get trước khi phân tích quy tắc
+        var processedRule = evaluateGetRules(rule)
+        
+        // 2. Xử lý @put nếu quy tắc chứa @put
+        if processedRule.contains("@put:") {
+            processPutRules(processedRule, on: mContent ?? self.content)
+            processedRule = removePutRules(processedRule)
+        }
+        
+        if processedRule.isEmpty { return "" }
+        
+        let list = getStringList(processedRule, from: mContent)
         return list.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     /// Trích xuất danh sách các chuỗi từ quy tắc (Hỗ trợ ghép nối &&, ||, @js)
     public func getStringList(_ rule: String?, from mContent: Any? = nil, isListRule: Bool = false) -> [String] {
         guard let rule = rule, !rule.isEmpty else { return [] }
+        
+        // Xử lý @get trước khi phân tích danh sách
+        var processedRule = evaluateGetRules(rule)
+        if processedRule.contains("@put:") {
+            processPutRules(processedRule, on: mContent ?? self.content)
+            processedRule = removePutRules(processedRule)
+        }
+        
+        if processedRule.isEmpty { return [] }
+        
         let evalContent = mContent ?? self.content
         guard let evalContent = evalContent else { return [] }
         
-        let trimmedRule = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedRule = processedRule.trimmingCharacters(in: .whitespacesAndNewlines)
         
         // 1. Nếu quy tắc là khối JavaScript thuần (@js: hoặc <js>)
         if trimmedRule.hasPrefix("@js:") {
@@ -105,12 +146,15 @@ public final class AnalyzeRule {
         
         var results: [String] = []
         
-        // Phân loại định dạng nội dung (HTML vs JSON)
+        // Phân loại định dạng nội dung (HTML vs JSON) và bộ lọc (XPath vs Jsoup vs JSONPath)
         let contentStr = String(describing: content)
         let isJson = contentStr.hasPrefix("{") || contentStr.hasPrefix("[")
+        let isXPathRule = currentRule.hasPrefix("/") || currentRule.lowercased().hasPrefix("@xpath:")
         
         if isJson {
             results = evaluateJsonRule(currentRule, jsonStr: contentStr)
+        } else if isXPathRule {
+            results = evaluateXPathRule(currentRule, htmlStr: contentStr)
         } else {
             results = evaluateHtmlRule(currentRule, htmlStr: contentStr, isListRule: isListRule)
         }
@@ -132,10 +176,17 @@ public final class AnalyzeRule {
     // MARK: - HTML RULE PARSER (SwiftSoup)
     
     private func evaluateHtmlRule(_ rule: String, htmlStr: String, isListRule: Bool) -> [String] {
+        var cleanRule = rule
+        if cleanRule.lowercased().hasPrefix("@css:") {
+            cleanRule = String(cleanRule.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if cleanRule.hasPrefix("@@") {
+            cleanRule = String(cleanRule.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
         guard let doc = try? SwiftSoup.parse(htmlStr, baseUrl ?? "") else { return [htmlStr] }
         
         // Chia tách bằng @ để tìm thuộc tính cần lấy (VD: selector@text hoặc selector@href)
-        let parts = rule.components(separatedBy: "@")
+        let parts = cleanRule.components(separatedBy: "@")
         let selector = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
         
         let defaultAttr = isListRule ? "outerHtml" : "text"
@@ -172,27 +223,58 @@ public final class AnalyzeRule {
         return results
     }
     
-    // MARK: - JSON RULE PARSER (JSContext)
+    // MARK: - XPATH RULE PARSER (Kanna)
     
-    private func evaluateJsonRule(_ rule: String, jsonStr: String) -> [String] {
-        var jsPath = rule.trimmingCharacters(in: .whitespacesAndNewlines)
-        if jsPath.hasPrefix("$.") {
-            jsPath = "_jsonObj." + jsPath.dropFirst(2)
-        } else if jsPath.hasPrefix("$[") {
-            jsPath = "_jsonObj" + jsPath.dropFirst(1)
-        } else if jsPath == "$" {
-            jsPath = "_jsonObj"
+    private func evaluateXPathRule(_ rule: String, htmlStr: String) -> [String] {
+        var xpath = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        if xpath.lowercased().hasPrefix("@xpath:") {
+            xpath = String(xpath.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         
-        // Xử lý [*] -> map lấy thuộc tính
-        jsPath = jsPath.replacingOccurrences(of: "[*]", with: "")
+        guard let doc = try? Kanna.HTML(html: htmlStr, encoding: .utf8) else { return [htmlStr] }
         
-        // Sửa lỗi phình RAM: Chạy trong IIFE để tránh lưu trữ _jsonObj ở scope global của JSContext
+        var results: [String] = []
+        let isHtml = xpath.hasSuffix("/@html") || xpath.hasSuffix("/html()")
+        if isHtml {
+            if xpath.hasSuffix("/@html") {
+                xpath = String(xpath.dropLast(6))
+            } else {
+                xpath = String(xpath.dropLast(7))
+            }
+        }
+        
+        let nodes = doc.xpath(xpath)
+        for node in nodes {
+            if isHtml {
+                if let html = node.toHTML {
+                    results.append(html)
+                }
+            } else {
+                if let text = node.text {
+                    results.append(text)
+                } else if let content = node.content {
+                    results.append(content)
+                }
+            }
+        }
+        
+        return results
+    }
+    
+    // MARK: - JSON RULE PARSER (JSContext + customJsonPath)
+    
+    private func evaluateJsonRule(_ rule: String, jsonStr: String) -> [String] {
+        var jsonPath = rule.trimmingCharacters(in: .whitespacesAndNewlines)
+        if jsonPath.lowercased().hasPrefix("@json:") {
+            jsonPath = String(jsonPath.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
         let escapedJson = jsonStr.jsonEscaped()
         let jsExpression = """
         (function() {
             var _jsonObj = JSON.parse(\(escapedJson));
-            return \(jsPath);
+            var res = customJsonPath(_jsonObj, "\(jsonPath)");
+            return res;
         })()
         """
         
@@ -232,6 +314,98 @@ public final class AnalyzeRule {
         
         let valStr = val.isUndefined || val.isNull ? "" : val.toString() ?? ""
         return valStr.isEmpty ? [] : [valStr]
+    }
+    
+    // MARK: - Get/Put Rules Helpers
+    
+    private func evaluateGetRules(_ rule: String) -> String {
+        var result = rule
+        let pattern = "@get:\\{([^}]+?)\\}"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return rule }
+        
+        let nsRange = NSRange(result.startIndex..<result.endIndex, in: result)
+        let matches = regex.matches(in: result, options: [], range: nsRange)
+        
+        for match in matches.reversed() {
+            guard let totalRange = Range(match.range(at: 0), in: result),
+                  let keyRange = Range(match.range(at: 1), in: result) else {
+                continue
+            }
+            let key = String(result[keyRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let val = getVariable(key)
+            result.replaceSubrange(totalRange, with: val)
+        }
+        return result
+    }
+    
+    private func extractPutJson(from text: String) -> (json: String, range: Range<String.Index>)? {
+        guard let startRange = text.range(of: "@put:", options: .caseInsensitive) else { return nil }
+        let afterPutIndex = startRange.upperBound
+        let remainingText = String(text[afterPutIndex...])
+        
+        guard let firstBraceIndex = remainingText.firstIndex(of: "{") else { return nil }
+        
+        var braceDepth = 0
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var prevChar: Character? = nil
+        let chars = Array(remainingText)
+        let startOffset = remainingText.distance(from: remainingText.startIndex, to: firstBraceIndex)
+        
+        for i in startOffset..<chars.count {
+            let char = chars[i]
+            
+            if char == "'" && prevChar != "\\" && !inDoubleQuote {
+                inSingleQuote.toggle()
+            } else if char == "\"" && prevChar != "\\" && !inSingleQuote {
+                inDoubleQuote.toggle()
+            }
+            
+            let inQuote = inSingleQuote || inDoubleQuote
+            if !inQuote {
+                if char == "{" { braceDepth += 1 }
+                else if char == "}" {
+                    braceDepth -= 1
+                    if braceDepth == 0 {
+                        let endOffset = i
+                        let startIndex = remainingText.index(remainingText.startIndex, offsetBy: startOffset)
+                        let endIndex = remainingText.index(remainingText.startIndex, offsetBy: endOffset + 1)
+                        let jsonContent = String(remainingText[startIndex..<endIndex])
+                        
+                        // Tính toán range trong text gốc
+                        let textEndIndex = text.index(afterPutIndex, offsetBy: endOffset + 1)
+                        // Bao gồm cả phần @put:
+                        return (jsonContent, startRange.lowerBound..<textEndIndex)
+                    }
+                }
+            }
+            prevChar = char
+        }
+        return nil
+    }
+    
+    private func processPutRules(_ rule: String, on evalContent: Any?) {
+        guard let evalContent = evalContent else { return }
+        var tempRule = rule
+        while let putData = extractPutJson(from: tempRule) {
+            let jsonStr = putData.json
+            if let jsonData = jsonStr.data(using: .utf8),
+               let dict = try? JSONSerialization.jsonObject(with: jsonData) as? [String: String] {
+                for (key, selector) in dict {
+                    let val = getString(selector, from: evalContent)
+                    putVariable(key: key, value: val)
+                }
+            }
+            tempRule.replaceSubrange(putData.range, with: "")
+        }
+    }
+    
+    private func removePutRules(_ rule: String) -> String {
+        var cleanRule = rule
+        while let putData = extractPutJson(from: cleanRule) {
+            cleanRule.replaceSubrange(putData.range, with: "")
+        }
+        return cleanRule.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

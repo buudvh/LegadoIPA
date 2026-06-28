@@ -217,20 +217,50 @@ public final class MarkdownExporter {
         throw NSError(domain: "MarkdownExporter", code: 603, userInfo: [NSLocalizedDescriptionKey: "Không thể tải nội dung chương sau \(retryCount) lần thử lại"])
     }
     
-    /// Tải nội dung một chương cụ thể
+    /// Tải nội dung một chương cụ thể (Hỗ trợ webJs cào qua WebView ngầm và nextContentUrl cào truyện phân trang)
     private func fetchChapterContent(chapter: BookChapter, source: BookSource, useTranslation: Bool) async throws -> String {
         guard let contentRule = source.ruleContent else {
             throw NSError(domain: "MarkdownExporter", code: 604, userInfo: [NSLocalizedDescriptionKey: "Quy tắc nội dung chương (ruleContent) trống"])
         }
         
-        let analyzeUrl = AnalyzeUrl(urlStr: chapter.url, source: source)
-        let htmlResponse = try await NetworkManager.shared.request(analyzeUrl)
+        var nextUrl = chapter.url
+        var allContents: [String] = []
+        var visitedUrls: Set<String> = []
         
-        let analyzer = AnalyzeRule(content: htmlResponse, baseUrl: chapter.url, source: source)
-        let rawContent = analyzer.getString(contentRule.content ?? "")
+        let webJs = contentRule.webJs
         
-        // Áp dụng bộ lọc Regex/Lọc thay thế thô
-        var processedText = rawContent
+        while !nextUrl.isEmpty && !visitedUrls.contains(nextUrl) {
+            visitedUrls.insert(nextUrl)
+            
+            let analyzeUrl = AnalyzeUrl(urlStr: nextUrl, source: source)
+            
+            // Gọi request mạng có hỗ trợ webJs của WKWebView ngầm
+            let htmlResponse = try await NetworkManager.shared.request(analyzeUrl, webJs: webJs)
+            
+            let analyzer = AnalyzeRule(content: htmlResponse, baseUrl: nextUrl, source: source)
+            let rawContent = analyzer.getString(contentRule.content ?? "")
+            allContents.append(rawContent)
+            
+            // Trích xuất liên kết đến trang tiếp theo của chương
+            if let nextPageRule = contentRule.nextContentUrl, !nextPageRule.isEmpty {
+                let relNextUrl = analyzer.getString(nextPageRule)
+                if !relNextUrl.isEmpty {
+                    // Giải quyết liên kết tuyệt đối
+                    if let base = URL(string: nextUrl), let absNext = URL(string: relNextUrl, relativeTo: base) {
+                        let absoluteNextUrl = absNext.absoluteString
+                        
+                        // Tránh lặp vô hạn hoặc nhảy sang chương kế tiếp ngoài ý muốn
+                        if absoluteNextUrl != chapter.url && !visitedUrls.contains(absoluteNextUrl) {
+                            nextUrl = absoluteNextUrl
+                            continue
+                        }
+                    }
+                }
+            }
+            break
+        }
+        
+        var processedText = allContents.joined(separator: "\n")
         
         // Nếu bật dịch tự động sang Việt ngữ (Hán-Việt)
         if useTranslation {

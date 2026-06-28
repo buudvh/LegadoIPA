@@ -20,10 +20,26 @@ public final class NetworkManager: NSObject, @preconcurrency URLSessionDelegate,
         self.session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
     }
     
-    /// Thực hiện gửi yêu cầu cào dữ liệu và trả về nội dung text (UTF-8 hoặc tương tự)
-    public func request(_ analyzeUrl: AnalyzeUrl) async throws -> String {
+    /// Thực hiện gửi yêu cầu cào dữ liệu, hỗ trợ nạp qua WebView ngầm nếu có kịch bản webJs
+    public func request(_ analyzeUrl: AnalyzeUrl, webJs: String? = nil) async throws -> String {
         guard let request = analyzeUrl.getRequest() else {
             throw NSError(domain: "NetworkManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "Không thể tạo URLRequest từ AnalyzeUrl"])
+        }
+        
+        // Nếu có cấu hình webJs, sử dụng WebView ngầm để nạp trang
+        if let webJs = webJs, !webJs.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard let urlStr = request.url?.absoluteString else {
+                throw NSError(domain: "NetworkManager", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL không hợp lệ cho WebView"])
+            }
+            // Đồng bộ cookie từ storage sang WebView trước khi chạy
+            await syncCookiesToWebView(for: request.url!)
+            
+            // Thực thi qua WebView ngầm
+            let result = try await WebViewPool.shared.execute(urlStr: urlStr, jsCode: webJs)
+            
+            // Đồng bộ cookie ngược lại từ WebView sang storage sau khi chạy
+            await syncCookiesFromWebViewToStorage()
+            return result
         }
         
         // Đảm bảo chạy đồng bộ trên MainActor

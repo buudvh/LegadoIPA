@@ -1,6 +1,6 @@
 name: LegadoIPA
 options:
-  bundleIdPrefix: com.hoang
+  bundleIdPrefix: com.buudvh
 targets:
   LegadoIPA:
     type: application
@@ -11,6 +11,8 @@ targets:
     dependencies:
       - package: SwiftSoup
         product: SwiftSoup
+      - package: Kanna
+        product: Kanna
     settings:
       base:
         CODE_SIGNING_ALLOWED: false
@@ -18,9 +20,12 @@ targets:
         CODE_SIGN_IDENTITY: ""
         DEVELOPMENT_TEAM: ""
         INFOPLIST_FILE: Sources/Info.plist
-        PRODUCT_BUNDLE_IDENTIFIER: com.hoang.LegadoIPA
+        PRODUCT_BUNDLE_IDENTIFIER: com.buudvh.LegadoIPA
 
 packages:
   SwiftSoup:
     url: https://github.com/scinfu/SwiftSoup.git
     from: 2.6.1
+  Kanna:
+    url: https://github.com/tid-kijyna/Kanna.git
+    from: 5.3.0

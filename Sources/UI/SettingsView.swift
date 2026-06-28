@@ -17,6 +17,10 @@ public struct SettingsView: View {
     @State private var syncMessage = ""
     @State private var isReloadingDicts = false
     
+    // Trạng thái cho kiểm thử nguồn sách
+    @State private var isTesting = false
+    @State private var testLog = ""
+    
     public init() {}
     
     public var body: some View {
@@ -94,6 +98,31 @@ public struct SettingsView: View {
                     Button(action: clearReaderCache) {
                         Text("Xóa cache chương truyện & ảnh bìa")
                             .foregroundColor(.red)
+                    }
+                }
+                
+                // 4. Kiểm thử Nguồn sách (Debug)
+                Section(header: Text("Kiểm thử & Gỡ lỗi")) {
+                    Button(action: runSourceTest) {
+                        if isTesting {
+                            ProgressView("Đang kiểm thử...")
+                        } else {
+                            Text("Chạy kiểm thử nguồn sách 69shu")
+                                .foregroundColor(.blue)
+                        }
+                    }
+                    .disabled(isTesting)
+                    
+                    if !testLog.isEmpty {
+                        ScrollView {
+                            Text(testLog)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(.secondarySystemBackground))
+                                .cornerRadius(8)
+                        }
+                        .frame(height: 250)
                     }
                 }
             }
@@ -265,6 +294,18 @@ public struct SettingsView: View {
         } catch {
             syncMessage = "Lỗi phục hồi: \(error.localizedDescription)"
             isSyncing = false
+        }
+    }
+    
+    private func runSourceTest() {
+        isTesting = true
+        testLog = "Đang bắt đầu tác vụ chạy thử..."
+        
+        BookSourceTestHelper.runTest { log in
+            DispatchQueue.main.async {
+                self.testLog = log
+                self.isTesting = false
+            }
         }
     }
 }

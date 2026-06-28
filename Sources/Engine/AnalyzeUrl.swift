@@ -10,10 +10,23 @@ public final class AnalyzeUrl {
     private var sharedJSContext: JSContext?
     private let lock = NSRecursiveLock()
     
-    public init(urlStr: String, source: BookSource?, ruleData: [String: Any] = [:]) {
+    public var key: String?
+    public var page: Int?
+    
+    public init(urlStr: String, source: BookSource?, ruleData: [String: Any] = [:], key: String? = nil, page: Int? = nil) {
         self.urlStr = urlStr.trimmingCharacters(in: .whitespacesAndNewlines)
         self.source = source
-        self.ruleData = ruleData
+        self.key = key
+        self.page = page
+        
+        var mutableRuleData = ruleData
+        if let key = key {
+            mutableRuleData["key"] = key
+        }
+        if let page = page {
+            mutableRuleData["page"] = page
+        }
+        self.ruleData = mutableRuleData
     }
     
     /// Sinh URLRequest cuối cùng sau khi phân tích

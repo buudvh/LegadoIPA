@@ -378,7 +378,7 @@ public struct ExploreView: View {
             }
         }
         
-        let analyzeUrl = AnalyzeUrl(urlStr: absoluteUrlStr, source: source)
+        let analyzeUrl = AnalyzeUrl(urlStr: absoluteUrlStr, source: source, page: page)
         
         do {
             let html = try await NetworkManager.shared.request(analyzeUrl)
@@ -472,7 +472,7 @@ public struct ExploreView: View {
         var searchUrlStr = source.searchUrl ?? ""
         searchUrlStr = searchUrlStr.replacingOccurrences(of: "{key}", with: query)
         
-        let analyzeUrl = AnalyzeUrl(urlStr: searchUrlStr, source: source)
+        let analyzeUrl = AnalyzeUrl(urlStr: searchUrlStr, source: source, key: searchQuery)
         
         do {
             let html = try await NetworkManager.shared.request(analyzeUrl)
