@@ -146,6 +146,29 @@ import SwiftSoup
             }
         }
     }
+    }
+}
+
+// MARK: - Response Wrapper cho JS (startBrowserAwait / ajax)
+@objc protocol JSResponseExport: JSExport {
+    func body() -> String
+    func toString() -> String
+}
+
+@objc class JSResponseObj: NSObject, JSResponseExport {
+    private var html: String
+    
+    init(html: String) {
+        self.html = html
+    }
+    
+    func body() -> String {
+        return html
+    }
+    
+    func toString() -> String {
+        return html
+    }
 }
 
 // MARK: - Main JSBridge
@@ -163,8 +186,11 @@ public final class JSBridge {
         // Đăng ký các phương thức của Bridge lên đối tượng "java" và phạm vi toàn cục (global)
         
         // 1. AJAX request (Đồng bộ qua Semaphore)
-        let ajaxBlock: @convention(block) (String) -> String? = { urlStr in
-            return bridge.syncAjax(url: urlStr, baseUrl: baseUrl, source: source)
+        let ajaxBlock: @convention(block) (String) -> JSResponseObj? = { urlStr in
+            if let resStr = bridge.syncAjax(url: urlStr, baseUrl: baseUrl, source: source) {
+                return JSResponseObj(html: resStr)
+            }
+            return nil
         }
         javaObject?.setObject(ajaxBlock, forKeyedSubscript: "ajax" as NSString)
         context.setObject(ajaxBlock, forKeyedSubscript: "ajax" as NSString)
@@ -257,8 +283,11 @@ public final class JSBridge {
         context.setObject(cookieBridge, forKeyedSubscript: "cookie" as NSString)
         
         // 9.1 startBrowserAwait để hiển thị popup WebView giải khiên Cloudflare
-        let startBrowserBlock: @convention(block) (String, String) -> String? = { urlStr, titleStr in
-            return bridge.startBrowserAwait(url: urlStr, title: titleStr)
+        let startBrowserBlock: @convention(block) (String, String) -> JSResponseObj? = { urlStr, titleStr in
+            if let resStr = bridge.startBrowserAwait(url: urlStr, title: titleStr) {
+                return JSResponseObj(html: resStr)
+            }
+            return nil
         }
         javaObject?.setObject(startBrowserBlock, forKeyedSubscript: "startBrowserAwait" as NSString)
         context.setObject(startBrowserBlock, forKeyedSubscript: "startBrowserAwait" as NSString)
@@ -450,8 +479,7 @@ public final class JSBridge {
         
         let task = URLSession.shared.dataTask(with: request) { data, _, _ in
             if let data = data {
-                // Tự động nhận diện encoding và chuyển về UTF-8
-                result = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii)
+                result = self.decodeResponseData(data)
             }
             semaphore.signal()
         }
@@ -495,5 +523,19 @@ public final class JSBridge {
         guard let data = str.data(using: .utf8) else { return "" }
         let digest = Insecure.MD5.hash(data: data)
         return digest.map { String(format: "%02hhx", $0) }.joined()
+    }
+    
+    fileprivate func decodeResponseData(_ data: Data) -> String {
+        if let utf8Str = String(data: data, encoding: .utf8) {
+            return utf8Str
+        }
+        let gbkEncoding = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
+        if let gbkStr = String(data: data, encoding: String.Encoding(rawValue: gbkEncoding)) {
+            return gbkStr
+        }
+        if let winStr = String(data: data, encoding: .windowsCP1252) {
+            return winStr
+        }
+        return String(data: data, encoding: .ascii) ?? ""
     }
 }

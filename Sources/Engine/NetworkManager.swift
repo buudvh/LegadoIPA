@@ -69,10 +69,23 @@ public final class NetworkManager: NSObject, @preconcurrency URLSessionDelegate,
             return htmlStr
         }
         
-        // Fallback dự phòng sang UTF-8 hoặc ASCII
+        // Fallback dự phòng thông minh
         if let htmlStr = String(data: data, encoding: .utf8) {
             return htmlStr
-        } else if let asciiStr = String(data: data, encoding: .ascii) {
+        }
+        
+        // Thử giải mã GB18030 (tương thích GBK/GB2312 của Trung Quốc)
+        let gbkEncoding = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue))
+        if let gbkStr = String(data: data, encoding: String.Encoding(rawValue: gbkEncoding)) {
+            return gbkStr
+        }
+        
+        // Thử Windows-1252
+        if let winStr = String(data: data, encoding: .windowsCP1252) {
+            return winStr
+        }
+        
+        if let asciiStr = String(data: data, encoding: .ascii) {
             return asciiStr
         }
         
